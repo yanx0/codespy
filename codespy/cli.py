@@ -133,3 +133,7 @@ def _click_main() -> None:
         _run(args)
 
     cli()
+
+
+if __name__ == "__main__":
+    main()
