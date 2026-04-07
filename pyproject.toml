@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "codespy"
+version = "0.1.0"
+description = "A CLI code quality scanner"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+cli = ["click>=8"]
+report = ["jinja2>=3"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+codespy = "codespy.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["codespy*"]
