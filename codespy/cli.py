@@ -25,7 +25,9 @@ def _argparse_main() -> None:
     parser.add_argument("--no-duplication", action="store_true", help="Skip duplication analysis")
     parser.add_argument("--no-smells", action="store_true", help="Skip smell detection")
     parser.add_argument("--ignore", nargs="*", default=[], metavar="PATTERN",
-                        help="Extra dirs/patterns to ignore")
+                        help="Extra dir names to ignore (legacy)")
+    parser.add_argument("--exclude", action="append", default=[], metavar="GLOB",
+                        help="Exclude files matching glob pattern, e.g. '*/target/*' (repeatable)")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress progress output")
     parser.add_argument("--version", action="version", version="codespy 0.1.0")
 
@@ -44,6 +46,7 @@ def _run(args) -> None:
         analyze_smells=not args.no_smells,
         analyze_duplication=not args.no_duplication,
         extra_ignores=list(args.ignore),
+        exclude_globs=list(args.exclude),
         quiet=args.quiet,
     )
 
@@ -110,11 +113,12 @@ def _click_main() -> None:
     @click.option("--no-complexity", is_flag=True, help="Skip complexity analysis")
     @click.option("--no-duplication", is_flag=True, help="Skip duplication analysis")
     @click.option("--no-smells", is_flag=True, help="Skip smell detection")
-    @click.option("--ignore", multiple=True, help="Extra ignore patterns")
+    @click.option("--ignore", multiple=True, help="Extra dir names to ignore (legacy)")
+    @click.option("--exclude", multiple=True, help="Exclude files matching glob, e.g. '*/target/*' (repeatable)")
     @click.option("-q", "--quiet", is_flag=True, help="Suppress progress output")
     @click.version_option("0.1.0", prog_name="codespy")
     def cli(path, output_json, report, report_out, no_complexity,
-            no_duplication, no_smells, ignore, quiet):
+            no_duplication, no_smells, ignore, exclude, quiet):
         """Analyze code quality of a directory or file."""
 
         class _Args:
@@ -129,6 +133,7 @@ def _click_main() -> None:
         args.no_duplication = no_duplication
         args.no_smells = no_smells
         args.ignore = list(ignore)
+        args.exclude = list(exclude)
         args.quiet = quiet
         _run(args)
 

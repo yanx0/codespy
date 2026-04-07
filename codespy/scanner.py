@@ -28,6 +28,7 @@ class ScanConfig:
     ignore_extensions: set[str] = None  # type: ignore[assignment]
     ignore_filenames: set[str] = None  # type: ignore[assignment]
     extra_ignores: list[str] = None  # type: ignore[assignment]
+    exclude_globs: list[str] = None  # type: ignore[assignment]
     analyze_complexity: bool = True
     analyze_smells: bool = True
     analyze_duplication: bool = True
@@ -44,15 +45,27 @@ class ScanConfig:
             self.ignore_filenames = set(DEFAULT_IGNORE_FILENAMES)
         if self.extra_ignores is None:
             self.extra_ignores = []
+        if self.exclude_globs is None:
+            self.exclude_globs = []
 
 
-def _should_ignore(path: Path, config: ScanConfig) -> bool:
+def _should_ignore(path: Path, rel_path: Path, config: ScanConfig) -> bool:
     """Return True if this path should be skipped."""
-    # Check directory components
+    # Check each directory component against ignore_dirs and simple extra_ignores
     for part in path.parts:
         if part in config.ignore_dirs:
             return True
         for pattern in config.extra_ignores:
+            if fnmatch.fnmatch(part, pattern):
+                return True
+
+    # Check full relative path against glob patterns (e.g. */target/*)
+    rel_str = str(rel_path)
+    for pattern in config.exclude_globs:
+        if fnmatch.fnmatch(rel_str, pattern):
+            return True
+        # Also match against any path component for bare dir names
+        for part in rel_path.parts:
             if fnmatch.fnmatch(part, pattern):
                 return True
 
@@ -70,7 +83,11 @@ def _iter_files(root: Path, config: ScanConfig):
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
-        if _should_ignore(path, config):
+        try:
+            rel = path.relative_to(root)
+        except ValueError:
+            rel = path
+        if _should_ignore(path, rel, config):
             continue
         yield path
 

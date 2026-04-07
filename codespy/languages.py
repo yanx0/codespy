@@ -133,10 +133,20 @@ def is_text_language(language: str) -> bool:
 
 # Default ignore patterns
 DEFAULT_IGNORE_DIRS = {
-    ".git", "node_modules", "__pycache__", ".venv", "venv", "env",
-    ".tox", "dist", "build", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-    ".eggs", "*.egg-info", ".DS_Store", ".idea", ".vscode", "coverage",
-    "htmlcov", ".coverage", "site-packages",
+    # Version control
+    ".git",
+    # Python
+    "__pycache__", ".venv", "venv", "env", ".tox",
+    ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".eggs", "site-packages", "htmlcov", ".coverage",
+    # JavaScript / Node
+    "node_modules",
+    # Build output / generated
+    "dist", "build", "target",
+    # dbt
+    "dbt_packages",
+    # Misc tooling
+    ".DS_Store", ".idea", ".vscode", "coverage",
 }
 
 DEFAULT_IGNORE_EXTENSIONS = {
