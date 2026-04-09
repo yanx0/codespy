@@ -99,9 +99,16 @@ def analyze(
     # Deduplicate: keep the longest match per file-pair region
     pairs = _deduplicate_pairs(pairs)
 
-    total_dup_lines = sum(
-        (p.lines_a[1] - p.lines_a[0] + 1) for p in pairs
-    )
+    # Count unique (file, line_number) tuples so a file shared with N partners
+    # only contributes its own lines once, not N times.
+    dup_line_set: set[tuple[str, int]] = set()
+    for p in pairs:
+        for ln in range(p.lines_a[0], p.lines_a[1] + 1):
+            dup_line_set.add((p.file_a, ln))
+        for ln in range(p.lines_b[0], p.lines_b[1] + 1):
+            dup_line_set.add((p.file_b, ln))
+    total_dup_lines = len(dup_line_set)
+
     total_code_lines = sum(
         len([l for l in source_map.get(f, []) if l.strip()])
         for f in file_paths

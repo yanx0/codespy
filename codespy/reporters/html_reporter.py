@@ -115,17 +115,31 @@ def _recommended_actions(result: ScanResult) -> list[dict]:
             actions.append({
                 "priority": "CRITICAL",
                 "action": f"Refactor `{h.name}` in `{path}`",
-                "detail": f"Cyclomatic complexity {h.complexity} — extremely hard to test and maintain",
+                "detail": f"Cyclomatic complexity {h.complexity} — split into smaller, independently testable functions",
             })
 
-    # HIGH: duplication
+    # HIGH: duplication — differentiate SQL header patterns from general code duplication
     if result.duplication and result.duplication.duplication_percent > 10:
-        actions.append({
-            "priority": "HIGH",
-            "action": f"Eliminate duplicated code blocks",
-            "detail": f"{result.duplication.duplicate_pairs} pairs, "
-                      f"{result.duplication.duplication_percent:.1f}% of code is duplicated — extract shared logic",
-        })
+        sql_pairs = sum(
+            1 for p in result.duplication.pairs
+            if p.file_a.endswith(".sql") or p.file_b.endswith(".sql")
+        )
+        is_sql_heavy = sql_pairs > result.duplication.duplicate_pairs * 0.25
+        if is_sql_heavy:
+            actions.append({
+                "priority": "HIGH",
+                "action": "Extract shared SQL headers into a dbt base macro or config block",
+                "detail": f"{result.duplication.duplication_percent:.0f}% of lines appear in shared patterns "
+                          f"({result.duplication.duplicate_pairs} block pairs) — most are repeated model "
+                          "config headers that belong in a single macro",
+            })
+        else:
+            actions.append({
+                "priority": "HIGH",
+                "action": f"Consolidate {result.duplication.duplicate_pairs} duplicated code blocks",
+                "detail": f"{result.duplication.duplication_percent:.0f}% of lines appear in shared patterns "
+                          "— extract into reusable functions or shared modules",
+            })
 
     # HIGH: hotspots below CRITICAL threshold
     high_hotspots = [
@@ -134,64 +148,100 @@ def _recommended_actions(result: ScanResult) -> list[dict]:
         for h in f.complexity.hotspots if 10 <= h.complexity < 15
     ]
     if high_hotspots:
+        worst_path, worst_h = sorted(high_hotspots, key=lambda x: -x[1].complexity)[0]
         actions.append({
             "priority": "HIGH",
-            "action": f"Simplify {len(high_hotspots)} high-complexity function(s)",
-            "detail": f"Functions with complexity 10–14 are hard to reason about — "
-                      f"break them into smaller, testable units",
+            "action": f"Simplify {len(high_hotspots)} high-complexity "
+                      f"function{'s' if len(high_hotspots) > 1 else ''} — start with `{worst_h.name}`",
+            "detail": f"`{worst_h.name}` in `{worst_path}` has complexity {worst_h.complexity} "
+                      "— extract conditional branches into named helper functions",
         })
 
     # HIGH: long functions
-    long_fn_count = sum(
-        1 for f in result.files for s in f.smells if s.type == "long_function"
-    )
-    if long_fn_count >= 3:
+    long_fns = [s for f in result.files for s in f.smells if s.type == "long_function"]
+    if len(long_fns) >= 3:
+        worst_long = sorted(long_fns, key=lambda s: -int(s.detail.split()[0]) if s.detail else 0)
         actions.append({
             "priority": "HIGH",
-            "action": f"Break up {long_fn_count} long functions (>50 lines)",
-            "detail": "Long functions mix concerns and are hard to test — extract logical sub-steps",
+            "action": f"Break up {len(long_fns)} long functions",
+            "detail": f"Longest is `{worst_long[0].name}` ({worst_long[0].detail}) — "
+                      "extract logical sub-steps into named functions to improve testability",
+        })
+    elif len(long_fns) == 1 or len(long_fns) == 2:
+        for s in long_fns:
+            actions.append({
+                "priority": "MEDIUM",
+                "action": f"Shorten `{s.name}` ({s.detail})",
+                "detail": "Functions over 50 lines typically handle too many concerns — split at logical boundaries",
+            })
+
+    # MEDIUM: magic numbers — only flag if count is significant
+    magic_count = sum(1 for f in result.files for s in f.smells if s.type == "magic_number")
+    if magic_count >= 10:
+        # Find most affected file
+        magic_by_file = sorted(
+            [(f.path, sum(1 for s in f.smells if s.type == "magic_number")) for f in result.files],
+            key=lambda x: -x[1]
+        )
+        worst_magic_file = magic_by_file[0][0].split("/")[-1] if magic_by_file else "unknown"
+        actions.append({
+            "priority": "MEDIUM",
+            "action": f"Replace {magic_count} magic numbers with named constants",
+            "detail": f"Most concentrated in `{worst_magic_file}` — named constants make intent explicit "
+                      "and eliminate silent bugs when values change",
         })
 
     # MEDIUM: deep nesting
-    nesting_count = sum(
-        1 for f in result.files for s in f.smells if s.type == "deep_nesting"
-    )
+    nesting_count = sum(1 for f in result.files for s in f.smells if s.type == "deep_nesting")
     if nesting_count >= 2:
+        # Find the file with the most nesting
+        nested_files = sorted(
+            [(f.path, sum(1 for s in f.smells if s.type == "deep_nesting")) for f in result.files
+             if any(s.type == "deep_nesting" for s in f.smells)],
+            key=lambda x: -x[1]
+        )
+        worst_nested = nested_files[0][0].split("/")[-1] if nested_files else "unknown"
         actions.append({
             "priority": "MEDIUM",
-            "action": f"Flatten deep nesting in {nesting_count} location(s)",
-            "detail": "Deeply nested code (4+ levels) is a readability and bug risk — use early returns or extract guards",
+            "action": f"Flatten deep nesting in `{worst_nested}` and {nesting_count - 1} other location{'s' if nesting_count > 2 else ''}",
+            "detail": "4+ levels of indentation signals tangled control flow — use early returns and guard clauses",
+        })
+    elif nesting_count == 1:
+        nested_file = next(
+            (f.path.split("/")[-1] for f in result.files if any(s.type == "deep_nesting" for s in f.smells)),
+            "unknown"
+        )
+        actions.append({
+            "priority": "MEDIUM",
+            "action": f"Flatten deep nesting in `{nested_file}`",
+            "detail": "4+ levels of indentation signals tangled control flow — use early returns and guard clauses",
         })
 
     # MEDIUM: too many args
-    args_count = sum(
-        1 for f in result.files for s in f.smells if s.type == "too_many_args"
-    )
+    args_count = sum(1 for f in result.files for s in f.smells if s.type == "too_many_args")
     if args_count >= 2:
         actions.append({
             "priority": "MEDIUM",
-            "action": f"Reduce parameter lists in {args_count} function(s)",
-            "detail": "Functions with 5+ parameters are hard to call correctly — group into config objects",
+            "action": f"Reduce parameter counts in {args_count} functions",
+            "detail": "Functions with 5+ parameters are error-prone to call — group related params into a config dataclass",
         })
 
-    # MEDIUM: duplication under threshold
+    # MEDIUM: moderate duplication
     if result.duplication and 3 <= result.duplication.duplication_percent <= 10:
         actions.append({
             "priority": "MEDIUM",
-            "action": "Review and consolidate duplicate code patterns",
-            "detail": f"{result.duplication.duplication_percent:.1f}% duplication detected — "
-                      "consider shared utilities before it grows",
+            "action": "Consolidate repeated code patterns before they compound",
+            "detail": f"{result.duplication.duplication_percent:.0f}% of lines appear in shared patterns "
+                      "— extract now while the surface area is still small",
         })
 
     # LOW: TODOs
-    todo_count = sum(
-        1 for f in result.files for s in f.smells if s.type == "todo_fixme"
-    )
+    todo_count = sum(1 for f in result.files for s in f.smells if s.type == "todo_fixme")
     if todo_count > 3:
         actions.append({
             "priority": "LOW",
-            "action": f"Resolve or track {todo_count} TODO/FIXME markers",
-            "detail": "Convert to tracked issues or fix inline — stale TODOs erode code trust",
+            "action": f"Convert {todo_count} TODO/FIXME comments to tracked issues",
+            "detail": "Inline markers get ignored over time — move them to your issue tracker with owners and deadlines",
         })
 
     return actions[:8]  # cap at 8
@@ -203,10 +253,14 @@ def _executive_summary(result: ScanResult, actions: list[dict], top_risks: list[
     grade = q.grade if q else "?"
     score = q.score if q else 0
 
-    grade_desc = {
-        "A": "excellent shape", "B": "good shape",
-        "C": "moderate health", "D": "needs attention", "F": "critical condition",
-    }.get(grade, "unknown state")
+    # Grade maps to a sentence predicate (not a noun phrase)
+    grade_verdict = {
+        "A": "is in excellent health",
+        "B": "is in good shape with minor issues",
+        "C": "has moderate issues that should be addressed",
+        "D": "requires attention before scaling",
+        "F": "is in critical condition — high technical debt risk",
+    }.get(grade, "has an unknown health status")
 
     # Find the weakest sub-dimension
     if q:
@@ -216,37 +270,61 @@ def _executive_summary(result: ScanResult, actions: list[dict], top_risks: list[
     else:
         worst_dim, worst_score = "overall quality", score
 
-    # Count critical/high actions
-    critical_count = sum(1 for a in actions if a["priority"] == "CRITICAL")
-    high_count = sum(1 for a in actions if a["priority"] == "HIGH")
-
-    parts = [f"This codebase scores <strong>{grade} ({score}/100)</strong> — it is in {grade_desc}."]
-
-    if worst_score < 70:
-        parts.append(
-            f"The weakest dimension is <strong>{worst_dim} ({worst_score}/100)</strong>, "
-            "which is pulling the overall grade down."
+    # Build the primary driver sentence
+    primary_driver = ""
+    if worst_score < 50 and worst_dim == "Duplication" and result.duplication:
+        d = result.duplication
+        sql_pairs = sum(1 for p in d.pairs if p.file_a.endswith(".sql") or p.file_b.endswith(".sql"))
+        if sql_pairs > d.duplicate_pairs * 0.4:
+            primary_driver = (
+                f"The score is driven primarily by <strong>widespread SQL model duplication</strong>: "
+                f"{d.duplicate_pairs} block pairs share {d.duplicated_lines} lines "
+                f"({d.duplication_percent:.0f}% of the codebase) — most are repeated config headers "
+                f"across materialized views."
+            )
+        else:
+            primary_driver = (
+                f"The primary drag is <strong>code duplication</strong>: {d.duplicate_pairs} repeated "
+                f"block pairs covering {d.duplication_percent:.0f}% of the codebase."
+            )
+    elif worst_score < 60:
+        primary_driver = (
+            f"The weakest dimension is <strong>{worst_dim}</strong> ({worst_score}/100), "
+            "which is the primary driver of the low grade."
         )
 
-    if top_risks:
-        risky_file = top_risks[0]["path"].split("/")[-1]
-        parts.append(
-            f"Risk is most concentrated in <strong>{len(top_risks)} files</strong>; "
-            f"`{risky_file}` is the highest-priority target."
-        )
+    # Best next action
+    high_actions = [a for a in actions if a["priority"] in ("CRITICAL", "HIGH")]
+    next_step = ""
+    if high_actions:
+        next_step = f"Highest-impact next step: <strong>{high_actions[0]['action']}</strong>."
 
-    if critical_count:
-        parts.append(
-            f"There {'is' if critical_count == 1 else 'are'} <strong>{critical_count} critical issue(s)</strong> "
-            "that should be addressed before the next release."
+    parts = [
+        f"This codebase scores <strong>{grade} ({score}/100)</strong> and {grade_verdict}."
+    ]
+    if primary_driver:
+        parts.append(primary_driver)
+
+    # Secondary concerns (smells summary)
+    smell_counts = result.smells_by_type
+    serious_smells = {k: v for k, v in smell_counts.items() if k not in ("todo_fixme",)}
+    if serious_smells:
+        _smell_labels = {
+            "magic_number": ("magic number", "magic numbers"),
+            "deep_nesting": ("instance of deep nesting", "instances of deep nesting"),
+            "long_function": ("long function", "long functions"),
+            "too_many_args": ("function with too many parameters", "functions with too many parameters"),
+            "long_file": ("oversized file", "oversized files"),
+        }
+        top_smells = sorted(serious_smells.items(), key=lambda x: -x[1])[:2]
+        smell_desc = " and ".join(
+            f"{v} {_smell_labels.get(k, (k, k + 's'))[1 if v > 1 else 0]}"
+            for k, v in top_smells
         )
-    elif high_count:
-        parts.append(
-            f"There {'is' if high_count == 1 else 'are'} <strong>{high_count} high-priority item(s)</strong> "
-            "worth addressing in the next sprint."
-        )
-    else:
-        parts.append("No critical blockers found — focus on the medium-priority improvements below.")
+        parts.append(f"Secondary concerns include {smell_desc}.")
+
+    if next_step:
+        parts.append(next_step)
 
     return " ".join(parts)
 
@@ -527,13 +605,17 @@ _TEMPLATE = """<!DOCTYPE html>
 </div>
 
 <!-- ══════════════════════════════════════════════ COMPLEXITY HOTSPOTS -->
-{% if hotspot_rows %}
 <div class="section">
   <div class="section-header">
     <span class="section-icon">◈</span>
-    <span class="section-title">Complexity Hotspots</span>
-    <span class="section-badge">{{ hotspot_rows|length }} functions above threshold (CC ≥ 10)</span>
+    <span class="section-title">Complexity Analysis</span>
+    {% if hotspot_rows %}
+    <span class="section-badge">{{ hotspot_rows|length }} function{{ 's' if hotspot_rows|length != 1 else '' }} above threshold (CC ≥ 10)</span>
+    {% else %}
+    <span class="section-badge" style="color:var(--green);border-color:var(--green)">Score {{ complexity_score }}/100</span>
+    {% endif %}
   </div>
+  {% if hotspot_rows %}
   <div class="card">
     {% for h in hotspot_rows %}
     <div class="hotspot-bar">
@@ -544,8 +626,34 @@ _TEMPLATE = """<!DOCTYPE html>
     </div>
     {% endfor %}
   </div>
+  {% elif top_complexity_files %}
+  <div class="card" style="display:flex;gap:2rem;align-items:flex-start;flex-wrap:wrap">
+    <div style="flex:0 0 auto">
+      <span class="badge badge-ok" style="font-size:0.85rem;padding:0.3rem 0.8rem">✓ NO HOTSPOTS</span>
+      <p style="margin-top:0.75rem;font-size:0.875rem;color:var(--muted);max-width:280px">
+        No functions exceed the complexity threshold (CC ≥ 10).<br>
+        Complexity score: <strong style="color:var(--green)">{{ complexity_score }}/100</strong>.
+      </p>
+    </div>
+    <div style="flex:1;min-width:300px">
+      <div style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.6rem">Top files by max complexity</div>
+      {% for f in top_complexity_files %}
+      <div class="hotspot-bar">
+        <div class="hotspot-fn" style="min-width:200px">{{ f.path.split('/')|last }}</div>
+        <div class="hotspot-track"><div class="hotspot-fill" style="width:{{ min(f.max_cc * 10, 100) }}%;background:var(--blue)"></div></div>
+        <div class="hotspot-val" style="color:var(--blue)">{{ f.max_cc }}</div>
+        <div class="hotspot-file muted">{{ f.path }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="card" style="text-align:center;padding:2rem">
+    <span class="badge badge-ok" style="font-size:0.85rem;padding:0.3rem 0.8rem">✓ CLEAN</span>
+    <p style="margin-top:0.75rem;color:var(--muted);font-size:0.875rem">No complexity data available for this file type.</p>
+  </div>
+  {% endif %}
 </div>
-{% endif %}
 
 <!-- ════════════════════════════════════════════════════ DUPLICATION -->
 {% if duplication %}
@@ -553,21 +661,30 @@ _TEMPLATE = """<!DOCTYPE html>
   <div class="section-header">
     <span class="section-icon">⧉</span>
     <span class="section-title">Code Duplication</span>
-    <span class="section-badge">{{ dup_pct }}% of code duplicated</span>
+    <span class="section-badge">{{ dup_pct }}% of lines appear in shared patterns</span>
   </div>
   <div class="grid-3" style="margin-bottom:1.25rem">
-    <div class="stat-card"><div class="stat-value">{{ dup_pairs }}</div><div class="stat-label">Duplicate Pairs</div></div>
-    <div class="stat-card"><div class="stat-value">{{ dup_lines }}</div><div class="stat-label">Duplicated Lines</div></div>
-    <div class="stat-card"><div class="stat-value">{{ dup_pct }}%</div><div class="stat-label">Duplication Rate</div></div>
+    <div class="stat-card">
+      <div class="stat-value">{{ dup_pairs }}</div>
+      <div class="stat-label">Shared Block Pairs</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ dup_lines }}</div>
+      <div class="stat-label">Unique Shared Lines</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ dup_pct }}%</div>
+      <div class="stat-label">of Total Code</div>
+    </div>
   </div>
   {% if dup_pair_rows %}
   <div class="card table-wrap">
     <table>
-      <tr><th>File A</th><th>Lines</th><th>File B</th><th>Lines</th><th>Similarity</th></tr>
+      <tr><th>File A</th><th>Lines</th><th>File B</th><th>Lines</th><th>Match</th></tr>
       {% for row in dup_pair_rows %}
       <tr>
-        <td><code>{{ row.file_a }}</code></td><td>{{ row.lines_a }}</td>
-        <td><code>{{ row.file_b }}</code></td><td>{{ row.lines_b }}</td>
+        <td><code>{{ row.file_a }}</code></td><td class="muted">{{ row.lines_a }}</td>
+        <td><code>{{ row.file_b }}</code></td><td class="muted">{{ row.lines_b }}</td>
         <td><span class="badge badge-{{ 'CRITICAL' if row.sim_num >= 0.95 else ('HIGH' if row.sim_num >= 0.85 else 'MEDIUM') }}">{{ row.sim }}</span></td>
       </tr>
       {% endfor %}
@@ -743,12 +860,26 @@ def generate(result: ScanResult) -> str:
                 "note": _score_note(label, score, result),
             })
 
-    # Hotspots
+    # Hotspots (above threshold)
     all_hotspots = sorted(
         [{"path": f.path, "name": h.name, "complexity": h.complexity, "line": h.line}
          for f in result.files if f.complexity for h in f.complexity.hotspots],
         key=lambda x: -x["complexity"],
     )[:20]
+
+    # Top files by complexity — shown even when no hotspots exist
+    top_complexity_files = sorted(
+        [
+            {
+                "path": f.path,
+                "max_cc": f.complexity.max_complexity,
+                "avg_cc": f.complexity.average,
+            }
+            for f in result.files
+            if f.complexity and f.complexity.max_complexity > 1
+        ],
+        key=lambda x: -x["max_cc"],
+    )[:5]
 
     # Dup pairs
     dup_pair_rows = []
@@ -812,6 +943,8 @@ def generate(result: ScanResult) -> str:
         "actions": actions,
         "score_dims": score_dims,
         "hotspot_rows": all_hotspots,
+        "top_complexity_files": top_complexity_files,
+        "complexity_score": q.complexity_score if q else 0,
         "duplication": result.duplication is not None,
         "dup_pairs": result.duplication.duplicate_pairs if result.duplication else 0,
         "dup_lines": result.duplication.duplicated_lines if result.duplication else 0,
