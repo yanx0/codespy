@@ -2,13 +2,13 @@
 
 ## Overview
 
-CodeSpy is a zero-mandatory-dependency CLI code scanner written in Python 3.11+. It analyzes any codebase and reports on code quality via JSON output and a human-readable HTML/Markdown/CSV report.
+CodeSpy is a zero-mandatory-dependency CLI code scanner written in Python 3.11+. It analyzes any codebase and reports on code quality via JSON output and an editorial-style HTML/Markdown/CSV report. It also includes a `target` subcommand and a Claude Code slash command that together form a scanner-driven refactoring feedback loop.
 
 ## Architecture
 
 ```
 codespy/
-├── cli.py           — Entry point: CLI flags → ScanConfig → scan() → reporters
+├── cli.py           — Entry point: scan + target subcommands → reporters
 ├── scanner.py       — Orchestrates traversal + per-file analysis pipeline
 ├── languages.py     — Extension → language map; comment syntax; ignore patterns
 ├── metrics.py       — LOC counting (single-pass); function/class counting
@@ -20,8 +20,11 @@ codespy/
 │   └── duplication.py — Hash-first block deduplication + SequenceMatcher
 └── reporters/
     ├── json_reporter.py — JSON serialization
-    ├── html_reporter.py — HTML dashboard with Chart.js visualizations
+    ├── html_reporter.py — Editorial HTML dashboard with Chart.js
     └── md_reporter.py   — Markdown tables
+.claude/
+└── commands/
+    └── refactor-loop.md — Claude Code slash command (6-step refactor workflow)
 ```
 
 ## Key Decisions
@@ -48,21 +51,45 @@ Python's `ast` module is precise: it handles string literals that look like comm
 
 Building a hash index of 6-line normalized windows is O(total_lines). Only hash collisions — blocks with identical content — become candidates for `SequenceMatcher`. This keeps duplication analysis sub-second even on 50k-line repos.
 
-**Trade-off:** Near-duplicates that differ in every line (e.g., copy-paste with variable renaming throughout) won't be detected. The algorithm catches structural copy-paste, not refactored copies. This is a reasonable scope for a v1 tool.
+Duplicate line counting uses unique `(file, line_number)` tuples so a line shared between N partners is counted once, not N times. This prevents duplication percentages from exceeding 100%.
+
+**Trade-off:** Near-duplicates that differ in every line (e.g., copy-paste with variable renaming throughout) won't be detected. The algorithm catches structural copy-paste, not refactored copies.
 
 ### Decision 5: Dataclasses throughout
 
 All intermediate results are typed dataclasses, not dicts. The JSON reporter trivially uses `dataclasses.asdict`. The code is self-documenting without type annotation comments.
 
-**Trade-off:** Python 3.7+ required. No issue given the 3.11+ baseline.
-
 ### Decision 6: Pluggable reporters, no plugin architecture
 
-Three concrete reporter classes (`json_reporter`, `html_reporter`, `md_reporter`) rather than an ABC + dynamic loading. Adding a fourth reporter is a 20-line addition. Zero framework overhead.
+Three concrete reporter classes rather than an ABC + dynamic loading. Adding a fourth reporter is a 20-line addition. Zero framework overhead.
 
-**Trade-off:** No runtime extensibility. Accepted — over-engineering for a CLI tool.
+### Decision 7: `codespy target` as a machine-readable subcommand
 
-## Analysis Features Selected
+The `target` subcommand outputs a single JSON object with `file`, `function`, `function_cc`, `action`, and `success_signal` — designed for tool consumption, not human reading. This makes it composable with Claude Code commands, CI scripts, and other tooling.
+
+The target is selected by per-file risk scoring:
+- Complexity: 40% (max CC / 20, capped at 1.0)
+- Smells: 35% (smell count / 10, capped at 1.0)
+- Duplication: 15% (1.0 if file appears in any dup pair, else 0)
+- Size: 10% (code_lines / 400, capped at 1.0)
+
+A file must have at least one hotspot (CC ≥ 10) or two non-trivial smells to qualify as a target.
+
+### Decision 8: Scanner-as-proof refactoring loop
+
+The refactor loop (`.claude/commands/refactor-loop.md`) uses the scanner as the verification signal rather than code review. The success criterion is binary: `function_cc` drops ≥ 2 points or falls below 10 on re-scan. This removes ambiguity from "did the refactor work?" and makes the feedback loop deterministic.
+
+**Trade-off:** CC is a necessary but not sufficient quality signal — it doesn't measure readability or test coverage. Accepted as the right trade-off for an automated loop.
+
+### Decision 9: Manual `target` pre-routing in `main()`
+
+Rather than using a click Group (which would break the existing `codespy <path>` invocation), `main()` manually pre-routes the `target` subcommand before click sees `sys.argv`. This preserves full backwards compatibility.
+
+### Decision 10: Editorial HTML style
+
+The HTML dashboard uses a light editorial aesthetic (white background, Georgia serif headlines, two-column annotation cards with blue left border) rather than a dark dashboard style. More legible in print and in code review contexts.
+
+## Analysis Features
 
 | Feature | Why chosen |
 |---|---|
@@ -70,23 +97,26 @@ Three concrete reporter classes (`json_reporter`, `html_reporter`, `md_reporter`
 | Code smell detection | 6 practical smell types; fast; no AST required for most |
 | Code duplication | Complementary to the above; hash-first makes it fast |
 
-Together they cover three orthogonal quality dimensions: complexity (hard to understand), smell (bad structure), and duplication (copy-paste debt). Each feeds a sub-score in the quality model.
-
 ## Quality Scoring Model
 
 ```
 composite = complexity_score * 0.40 + smell_score * 0.35 + duplication_score * 0.25
 ```
 
-- **Complexity score**: `100 - (avg_complexity - 1) * 8`, minus 3 points per hotspot (≥10 CC), clamped 0–100
+- **Complexity score**: `100 - (avg_complexity - 1) * 8`, minus 3 points per hotspot (CC ≥ 10), clamped 0–100
 - **Smell score**: `100 - (weighted_smells_per_100_lines * 3)`, clamped 0–100; `todo_fixme` weighted 0.2×
 - **Duplication score**: `100 - (duplication_percent * 5)`, clamped 0–100
 
 Grades: A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60, F < 60.
 
+## Default Ignore Patterns
+
+`scanner.py` skips these directories by default: `.git`, `__pycache__`, `.venv`, `venv`, `node_modules`, `dist`, `build`, `target`, `dbt_packages`. Additional paths can be excluded via `--exclude GLOB` (e.g., `--exclude "*/migrations/*"`).
+
 ## Extension Points
 
 - **New language**: Add entry to `EXTENSION_MAP` and `COMMENT_SYNTAX` in `languages.py`
-- **New smell type**: Add detection logic in `analyzers/smells.py`, add description in `html_reporter.py`
+- **New smell type**: Add detection logic in `analyzers/smells.py`, wire label in `html_reporter.py`
 - **New reporter format**: Add `<format>_reporter.py` in `reporters/`, wire up in `cli.py`
 - **New analyzer**: Add module in `analyzers/`, call it in `scanner.py`, add result field to `FileResult`
+- **New Claude command**: Add `.md` file to `.claude/commands/` — Claude Code auto-discovers it

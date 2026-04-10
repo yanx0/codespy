@@ -233,8 +233,11 @@ def _write_csv(result, output_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    # Route to target subcommand if first real arg is "target"
+    # Route to target/scan subcommands before click sees argv
     real_args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if real_args and real_args[0] == "scan":
+        # Strip "scan" keyword — treat remainder as plain scan invocation
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
     if real_args and real_args[0] == "target":
         # Remove "target" from argv and dispatch
         sys.argv = [sys.argv[0]] + sys.argv[2:]

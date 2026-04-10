@@ -341,459 +341,410 @@ _TEMPLATE = """<!DOCTYPE html>
 <title>CodeSpy — Code Health Report</title>
 <style>
   :root {
-    --bg: #0b0d14; --surface: #141720; --surface2: #1c1f2e;
-    --border: #252840; --text: #e2e8f0; --muted: #7a859a;
-    --accent: #6366f1; --accent2: #818cf8;
-    --crit: #ef4444; --crit-bg: rgba(239,68,68,0.10);
-    --high: #f97316; --high-bg: rgba(249,115,22,0.10);
-    --med: #eab308;  --med-bg:  rgba(234,179,8,0.10);
-    --low: #3b82f6;  --low-bg:  rgba(59,130,246,0.10);
-    --green: #22c55e; --green-bg: rgba(34,197,94,0.10);
+    --bg: #fafaf8; --surface: #ffffff; --light: #f0f0ec;
+    --border: #e5e5e0; --text: #1a1a1a; --muted: #6b6b6b;
+    --accent: #2563eb; --accent-light: #dbeafe;
+    --crit: #dc2626; --crit-bg: #fef2f2; --crit-border: #fecaca;
+    --high: #ea580c; --high-bg: #fff7ed; --high-border: #fed7aa;
+    --med: #d97706;  --med-bg: #fffbeb;  --med-border: #fde68a;
+    --low: #2563eb;  --low-bg: #eff6ff;  --low-border: #bfdbfe;
+    --green: #16a34a; --green-bg: #f0fdf4; --green-border: #bbf7d0;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; }
 
-  /* Layout */
-  .page { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
-  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
-  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
-  @media (max-width: 768px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+  .page { max-width: 1100px; margin: 0 auto; padding: 3rem 2rem 6rem; }
 
-  /* Typography */
-  h1 { font-size: 1.5rem; font-weight: 700; }
-  h2 { font-size: 0.7rem; font-weight: 600; color: var(--muted); text-transform: uppercase;
-       letter-spacing: 0.1em; margin-bottom: 1rem; }
-  h3 { font-size: 1rem; font-weight: 600; }
-  code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85em;
-         background: var(--surface2); padding: 0.1em 0.35em; border-radius: 3px; }
-  .muted { color: var(--muted); font-size: 0.85rem; }
+  /* Editorial header */
+  .site-header { border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 3.5rem; }
+  .site-label { font-size: 0.68rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 0.5rem; }
+  .site-title { font-family: Georgia, 'Times New Roman', serif; font-size: 2.2rem; font-weight: 700; line-height: 1.2; margin-bottom: 0.4rem; }
+  .site-subtitle { font-size: 0.82rem; color: var(--muted); }
 
-  /* Cards & Surfaces */
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem 1.5rem; }
-  .card-accent { border-left: 3px solid var(--accent); }
+  /* Two-column editorial row */
+  .row { display: grid; grid-template-columns: 1fr 320px; gap: 3rem; margin-bottom: 4rem; align-items: start; }
+  .row.full { grid-template-columns: 1fr; }
+  @media (max-width: 800px) { .row { grid-template-columns: 1fr; } }
 
-  /* Section spacing */
-  .section { margin-bottom: 2.5rem; }
+  /* Annotation card (right column) */
+  .note { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); padding: 1.4rem 1.5rem; }
+  .note-label { font-size: 0.62rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.14em; margin-bottom: 0.75rem; }
+  .note-head { font-family: Georgia, serif; font-size: 1.3rem; font-weight: 700; line-height: 1.3; margin-bottom: 0.75rem; color: var(--text); }
+  .note-body { font-size: 0.83rem; color: var(--muted); line-height: 1.75; }
 
-  /* Hero */
-  .hero { background: linear-gradient(135deg, #141720 0%, #0f1320 100%);
-          border: 1px solid var(--border); border-radius: 12px;
-          padding: 2rem 2.5rem; margin-bottom: 2rem;
-          display: flex; align-items: center; gap: 2.5rem; flex-wrap: wrap; }
-  .hero-grade { font-size: 5rem; font-weight: 800; line-height: 1;
-                text-shadow: 0 0 40px currentColor; min-width: 100px; text-align: center; }
-  .hero-body { flex: 1; min-width: 280px; }
-  .hero-title { font-size: 1.6rem; font-weight: 700; margin-bottom: 0.25rem; }
-  .hero-meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 1rem; }
-  .hero-score-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-  .big-score { font-size: 2.5rem; font-weight: 700; }
-  .score-bar-wrap { flex: 1; min-width: 180px; }
-  .score-bar-track { background: var(--border); border-radius: 9999px; height: 10px; }
-  .score-bar-fill { height: 10px; border-radius: 9999px; background: var(--accent); }
+  /* Section number label */
+  .sec { font-size: 0.62rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.14em; margin-bottom: 1.25rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
 
-  /* Grade colors */
-  .grade-A { color: #22c55e; } .grade-B { color: #86efac; }
-  .grade-C { color: #eab308; } .grade-D { color: #f97316; } .grade-F { color: #ef4444; }
+  /* Grade + score */
+  .grade-display { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 1.75rem; }
+  .grade-letter { font-family: Georgia, serif; font-size: 4.5rem; font-weight: 700; line-height: 1; }
+  .grade-score { font-size: 1.4rem; font-weight: 300; color: var(--muted); }
+  .grade-A { color: #16a34a; } .grade-B { color: #65a30d; }
+  .grade-C { color: #d97706; } .grade-D { color: #ea580c; } .grade-F { color: #dc2626; }
 
-  /* Executive summary */
-  .summary-box { background: var(--surface2); border: 1px solid var(--border);
-                 border-left: 4px solid var(--accent); border-radius: 8px;
-                 padding: 1.25rem 1.5rem; font-size: 0.95rem; line-height: 1.7;
-                 margin-bottom: 2rem; }
-
-  /* Priority / Severity badges */
-  .badge { display: inline-block; padding: 0.2rem 0.55rem; border-radius: 5px;
-           font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; }
-  .badge-CRITICAL { background: var(--crit-bg); color: var(--crit); }
-  .badge-HIGH     { background: var(--high-bg); color: var(--high); }
-  .badge-MEDIUM   { background: var(--med-bg);  color: var(--med);  }
-  .badge-LOW      { background: var(--low-bg);  color: var(--low);  }
-  .badge-ok       { background: var(--green-bg); color: var(--green); }
+  /* Score dims */
+  .dim { margin-bottom: 1.1rem; }
+  .dim-top { display: flex; justify-content: space-between; margin-bottom: 0.35rem; }
+  .dim-label { font-size: 0.8rem; color: var(--text); }
+  .dim-val { font-size: 0.8rem; font-weight: 700; }
+  .dim-track { background: var(--light); height: 5px; border-radius: 2px; }
+  .dim-fill { height: 5px; border-radius: 2px; }
+  .dim-note { font-size: 0.73rem; color: var(--muted); margin-top: 0.25rem; }
 
   /* Risk cards */
-  .risk-card { background: var(--surface); border: 1px solid var(--border);
-               border-radius: 10px; padding: 1.1rem 1.25rem; }
-  .risk-card-header { display: flex; align-items: center; justify-content: space-between;
-                      margin-bottom: 0.5rem; }
-  .risk-filename { font-family: 'SF Mono', monospace; font-size: 0.82rem;
-                   color: var(--accent2); font-weight: 600; }
-  .risk-reason { font-size: 0.85rem; color: var(--muted); margin-bottom: 0.5rem; }
-  .risk-action { font-size: 0.85rem; padding: 0.4rem 0.75rem;
-                 background: var(--surface2); border-radius: 5px;
-                 border-left: 2px solid var(--accent); }
+  .risk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; }
+  @media (max-width: 600px) { .risk-grid { grid-template-columns: 1fr; } }
+  .risk-card { background: var(--surface); border: 1px solid var(--border); padding: 0.9rem 1rem; }
+  .risk-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.35rem; }
+  .risk-fn { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem; font-weight: 600; word-break: break-all; }
+  .risk-why { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.35rem; }
+  .risk-do { font-size: 0.75rem; color: var(--accent); }
 
-  /* Penalty breakdown */
-  .penalty-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.85rem; }
-  .penalty-label { font-size: 0.85rem; min-width: 130px; color: var(--text); }
-  .penalty-bar-track { flex: 1; background: var(--border); border-radius: 9999px; height: 8px; }
-  .penalty-bar-fill { height: 8px; border-radius: 9999px; }
-  .penalty-score { font-size: 0.85rem; font-weight: 700; min-width: 34px; text-align: right; }
-  .penalty-note { font-size: 0.78rem; color: var(--muted); min-width: 200px; }
+  /* Badges */
+  .badge { display: inline-block; padding: 0.12rem 0.4rem; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em; border: 1px solid transparent; }
+  .badge-CRITICAL { background: var(--crit-bg); color: var(--crit); border-color: var(--crit-border); }
+  .badge-HIGH     { background: var(--high-bg); color: var(--high); border-color: var(--high-border); }
+  .badge-MEDIUM   { background: var(--med-bg);  color: var(--med);  border-color: var(--med-border); }
+  .badge-LOW      { background: var(--low-bg);  color: var(--low);  border-color: var(--low-border); }
+  .badge-ok       { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
+  .badge-lang     { background: var(--light); color: var(--muted); border-color: var(--border); }
 
-  /* Action list */
-  .action-item { display: flex; gap: 1rem; padding: 0.9rem 1.1rem;
-                 background: var(--surface); border: 1px solid var(--border);
-                 border-radius: 8px; margin-bottom: 0.6rem; align-items: flex-start; }
-  .action-num { font-size: 1.1rem; font-weight: 800; color: var(--muted);
-                min-width: 24px; padding-top: 0.1rem; }
-  .action-body { flex: 1; }
-  .action-title { font-size: 0.92rem; font-weight: 600; margin-bottom: 0.2rem; }
-  .action-detail { font-size: 0.82rem; color: var(--muted); }
+  /* Hotspot rows */
+  .hs { display: flex; align-items: center; gap: 0.65rem; padding: 0.5rem 0; border-bottom: 1px solid var(--light); }
+  .hs:last-child { border-bottom: none; }
+  .hs-fn { font-family: 'SF Mono', monospace; font-size: 0.75rem; min-width: 150px; }
+  .hs-track { flex: 1; background: var(--light); height: 5px; border-radius: 2px; }
+  .hs-fill { height: 5px; border-radius: 2px; background: var(--crit); }
+  .hs-val { font-size: 0.75rem; font-weight: 700; min-width: 26px; text-align: right; }
+  .hs-file { font-size: 0.7rem; color: var(--muted); min-width: 140px; }
 
-  /* Stat cards */
-  .stat-card { background: var(--surface); border: 1px solid var(--border);
-               border-radius: 10px; padding: 1.1rem 1.25rem; text-align: center; }
-  .stat-value { font-size: 1.9rem; font-weight: 700; line-height: 1.2; }
-  .stat-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase;
-                letter-spacing: 0.08em; margin-top: 0.2rem; }
+  /* Actions */
+  .act { display: flex; gap: 1rem; padding: 0.9rem 0; border-bottom: 1px solid var(--border); align-items: flex-start; }
+  .act:last-child { border-bottom: none; }
+  .act-n { font-size: 0.62rem; font-weight: 700; color: var(--muted); min-width: 18px; padding-top: 0.2rem; }
+  .act-body { flex: 1; }
+  .act-title { font-size: 0.875rem; font-weight: 600; margin-bottom: 0.2rem; }
+  .act-detail { font-size: 0.78rem; color: var(--muted); line-height: 1.65; }
 
-  /* Tables */
-  .table-wrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-  th { text-align: left; padding: 0.6rem 0.75rem; color: var(--muted); font-weight: 600;
-       border-bottom: 1px solid var(--border); font-size: 0.72rem; text-transform: uppercase;
-       letter-spacing: 0.06em; cursor: pointer; user-select: none; }
-  th:hover { color: var(--text); }
-  th::after { content: " ⇅"; opacity: 0.3; }
-  td { padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: rgba(255,255,255,0.025); }
-  .row-critical td:first-child { border-left: 3px solid var(--crit); }
-  .row-high     td:first-child { border-left: 3px solid var(--high); }
-  .row-medium   td:first-child { border-left: 3px solid var(--med); }
-  .row-low      td:first-child { border-left: 3px solid var(--border); }
-
-  /* Section header */
-  .section-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
-  .section-icon { font-size: 1.1rem; }
-  .section-title { font-size: 1rem; font-weight: 700; }
-  .section-badge { font-size: 0.72rem; color: var(--muted); background: var(--surface2);
-                   border: 1px solid var(--border); border-radius: 5px;
-                   padding: 0.15rem 0.5rem; }
-
-  /* Hotspot bar */
-  .hotspot-bar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
-  .hotspot-fn { font-family: monospace; font-size: 0.82rem; min-width: 160px; color: var(--accent2); }
-  .hotspot-track { flex: 1; background: var(--border); border-radius: 9999px; height: 7px; }
-  .hotspot-fill { height: 7px; border-radius: 9999px; background: var(--crit); }
-  .hotspot-val { font-size: 0.82rem; font-weight: 700; min-width: 30px; text-align: right; }
-  .hotspot-file { font-size: 0.75rem; color: var(--muted); min-width: 180px; }
+  /* Stats */
+  .stats4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+  @media (max-width: 600px) { .stats4 { grid-template-columns: 1fr 1fr; } }
+  .stat-val { font-family: Georgia, serif; font-size: 2rem; font-weight: 700; line-height: 1; margin-bottom: 0.15rem; }
+  .stat-lbl { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
 
   /* Charts */
   canvas { max-width: 100%; }
-  .chart-container { position: relative; height: 220px; }
+  .chart-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; }
+  @media (max-width: 600px) { .chart-2 { grid-template-columns: 1fr; } }
+  .chart-lbl { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.6rem; }
+  .chart-h { position: relative; height: 200px; }
 
-  /* Divider */
-  .divider { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+  /* Dup stats */
+  .dup3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+
+  /* Tables */
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  th { text-align: left; padding: 0.5rem 0.6rem; color: var(--muted); font-weight: 600; border-bottom: 2px solid var(--border); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; user-select: none; }
+  th::after { content: " ⇅"; opacity: 0.3; }
+  td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--light); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--light); }
+  .row-critical td:first-child { border-left: 2px solid var(--crit); }
+  .row-high     td:first-child { border-left: 2px solid var(--high); }
+  .row-medium   td:first-child { border-left: 2px solid var(--med); }
+  .row-low      td:first-child { border-left: 2px solid var(--border); }
+  code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.82em; }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0 3.5rem; }
+  .footer { text-align: center; color: var(--muted); font-size: 0.72rem; font-style: italic; margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="page">
 
-<!-- ═══════════════════════════════════════════════════════════ HERO -->
-<div class="hero">
-  <div class="hero-grade grade-{{ grade }}">{{ grade }}</div>
-  <div class="hero-body">
-    <div class="hero-title">Code Health Report</div>
-    <div class="hero-meta">
-      <code>{{ scanned_path }}</code> &nbsp;·&nbsp; {{ total_files }} files &nbsp;·&nbsp;
-      {{ total_code_lines_fmt }} lines of code &nbsp;·&nbsp; {{ scanned_at }} &nbsp;·&nbsp; {{ duration_seconds }}s
+<!-- HEADER -->
+<header class="site-header">
+  <div class="site-label">CodeSpy &nbsp;·&nbsp; Code Health Report</div>
+  <h1 class="site-title">{{ scanned_path }}</h1>
+  <div class="site-subtitle">
+    {{ total_files }} files &nbsp;·&nbsp; {{ total_code_lines_fmt }} lines of code
+    &nbsp;·&nbsp; scanned {{ scanned_at }} &nbsp;·&nbsp; {{ duration_seconds }}s
+  </div>
+</header>
+
+<!-- 01 — THE SCORE -->
+<div class="row">
+  <div>
+    <div class="sec">01 — The Score</div>
+    <div class="grade-display">
+      <span class="grade-letter grade-{{ grade }}">{{ grade }}</span>
+      <span class="grade-score">{{ score }}/100</span>
     </div>
-    <div class="hero-score-row">
-      <div class="big-score grade-{{ grade }}">{{ score }}<span style="font-size:1.1rem;color:var(--muted);font-weight:400">/100</span></div>
-      <div class="score-bar-wrap">
-        <div class="score-bar-track">
-          <div class="score-bar-fill" style="width:{{ score }}%"></div>
-        </div>
+    {% for dim in score_dims %}
+    <div class="dim">
+      <div class="dim-top">
+        <span class="dim-label">{{ dim.label }}</span>
+        <span class="dim-val" style="color:{{ dim.color }}">{{ dim.score }}</span>
       </div>
+      <div class="dim-track"><div class="dim-fill" style="width:{{ dim.score }}%;background:{{ dim.color }}"></div></div>
+      <div class="dim-note">{{ dim.note }}</div>
     </div>
+    {% endfor %}
+  </div>
+  <div class="note">
+    <div class="note-label">01 — The Score</div>
+    <div class="note-head">{{ grade_headline }}</div>
+    <div class="note-body">{{ executive_summary }}</div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════ EXECUTIVE SUMMARY -->
-<div class="summary-box">{{ executive_summary }}</div>
-
-<!-- ═══════════════════════════════════════════════════════ TOP RISKS -->
+<!-- 02 — RISK FILES -->
 {% if top_risks %}
-<div class="section">
-  <div class="section-header">
-    <span class="section-icon">⚠</span>
-    <span class="section-title">Top Risk Files</span>
-    <span class="section-badge">{{ top_risks|length }} files flagged</span>
-  </div>
-  <div class="grid-2">
-    {% for r in top_risks %}
-    <div class="risk-card">
-      <div class="risk-card-header">
-        <span class="risk-filename">{{ r.path }}</span>
-        <span class="badge badge-{{ r.label }}">{{ r.label }}</span>
+<div class="row">
+  <div>
+    <div class="sec">02 — Risk Files</div>
+    <div class="risk-grid">
+      {% for r in top_risks %}
+      <div class="risk-card">
+        <div class="risk-top">
+          <div class="risk-fn">{{ r.path.split('/')|last }}</div>
+          <span class="badge badge-{{ r.label }}">{{ r.label }}</span>
+        </div>
+        <div class="risk-why">{{ r.reason }}</div>
+        <div class="risk-do">→ {{ r.action }}</div>
       </div>
-      <div class="risk-reason">{{ r.reason }}</div>
-      <div class="risk-action">→ {{ r.action }}</div>
+      {% endfor %}
     </div>
-    {% endfor %}
+  </div>
+  <div class="note">
+    <div class="note-label">02 — Risk Files</div>
+    <div class="note-head">{{ top_risks|length }} file{{ 's' if top_risks|length != 1 else '' }} need{{ '' if top_risks|length != 1 else 's' }} attention.</div>
+    <div class="note-body">
+      Files ranked by composite risk: complexity (40%), smells (35%), duplication (15%), size (10%).
+      {% if top_risks %}Highest-risk file: <strong style="color:var(--text)">{{ top_risks[0].path.split('/')|last }}</strong> — {{ top_risks[0].reason }}.{% endif %}
+    </div>
   </div>
 </div>
 {% endif %}
 
-<!-- ══════════════════════════════════════════════ SCORE BREAKDOWN -->
-<div class="section">
-  <div class="section-header">
-    <span class="section-icon">◎</span>
-    <span class="section-title">Score Breakdown</span>
-  </div>
-  <div class="card">
-    {% for dim in score_dims %}
-    <div class="penalty-row">
-      <div class="penalty-label">{{ dim.label }}</div>
-      <div class="penalty-bar-track">
-        <div class="penalty-bar-fill" style="width:{{ dim.score }}%;background:{{ dim.color }}"></div>
+<!-- 03 — COMPLEXITY -->
+<div class="row">
+  <div>
+    <div class="sec">03 — Complexity Hotspots</div>
+    {% if hotspot_rows %}
+      {% for h in hotspot_rows %}
+      <div class="hs">
+        <div class="hs-fn">{{ h.name }}</div>
+        <div class="hs-track">
+          <div class="hs-fill" style="width:{{ min(h.complexity * 5, 100) }}%;{% if h.complexity < 10 %}background:#a5b4fc{% elif h.complexity < 15 %}background:var(--high){% else %}background:var(--crit){% endif %}"></div>
+        </div>
+        <div class="hs-val" style="color:{% if h.complexity >= 15 %}var(--crit){% elif h.complexity >= 10 %}var(--high){% else %}var(--muted){% endif %}">{{ h.complexity }}</div>
+        <div class="hs-file">{{ h.path.split('/')|last }}:{{ h.line }}</div>
       </div>
-      <div class="penalty-score" style="color:{{ dim.color }}">{{ dim.score }}</div>
-      <div class="penalty-note">{{ dim.note }}</div>
-    </div>
-    {% endfor %}
+      {% endfor %}
+    {% elif top_complexity_files %}
+      <div style="color:var(--green);font-size:0.82rem;font-weight:600;margin-bottom:1rem">✓ No functions exceed CC ≥ 10</div>
+      {% for f in top_complexity_files %}
+      <div class="hs">
+        <div class="hs-fn" style="min-width:180px">{{ f.path.split('/')|last }}</div>
+        <div class="hs-track"><div class="hs-fill" style="width:{{ min(f.max_cc * 10, 100) }}%;background:#a5b4fc"></div></div>
+        <div class="hs-val" style="color:#6366f1">{{ f.max_cc }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div style="color:var(--muted);font-size:0.82rem">No complexity data available.</div>
+    {% endif %}
+  </div>
+  <div class="note">
+    <div class="note-label">03 — Complexity</div>
+    {% if hotspot_rows %}
+    <div class="note-head">{{ hotspot_rows|length }} function{{ 's' if hotspot_rows|length != 1 else '' }} above threshold.</div>
+    <div class="note-body">Cyclomatic complexity (CC) counts independent paths through a function. CC ≥ 10 means hard to test. CC ≥ 15 is critical. Target: every function below 10.</div>
+    {% else %}
+    <div class="note-head">No hotspots.</div>
+    <div class="note-body">Every function is below CC ≥ 10. Complexity score: <strong style="color:var(--text)">{{ complexity_score }}/100</strong>.</div>
+    {% endif %}
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════ RECOMMENDED ACTIONS -->
+<!-- 04 — WHAT TO FIX -->
 {% if actions %}
-<div class="section">
-  <div class="section-header">
-    <span class="section-icon">✦</span>
-    <span class="section-title">Recommended Actions</span>
-    <span class="section-badge">priority order</span>
-  </div>
-  {% for a in actions %}
-  <div class="action-item">
-    <div class="action-num">{{ loop.index }}</div>
-    <div class="action-body">
-      <div class="action-title">
-        <span class="badge badge-{{ a.priority }}" style="margin-right:0.5rem">{{ a.priority }}</span>
-        {{ a.action }}
+<div class="row full">
+  <div>
+    <div class="sec">04 — What to Fix &nbsp;·&nbsp; priority order</div>
+    {% for a in actions %}
+    <div class="act">
+      <div class="act-n">{{ loop.index }}</div>
+      <div class="act-body">
+        <div class="act-title">
+          <span class="badge badge-{{ a.priority }}" style="margin-right:0.4rem">{{ a.priority }}</span>
+          {{ a.action }}
+        </div>
+        <div class="act-detail">{{ a.detail }}</div>
       </div>
-      <div class="action-detail">{{ a.detail }}</div>
     </div>
+    {% endfor %}
   </div>
-  {% endfor %}
 </div>
 {% endif %}
 
 <hr class="divider">
 
-<!-- ═══════════════════════════════════════════════════ SUMMARY STATS -->
-<div class="section">
-  <h2>Codebase Overview</h2>
-  <div class="grid-4" style="margin-bottom:1.5rem">
-    <div class="stat-card"><div class="stat-value">{{ total_files }}</div><div class="stat-label">Files</div></div>
-    <div class="stat-card"><div class="stat-value">{{ total_code_lines_fmt }}</div><div class="stat-label">Code Lines</div></div>
-    <div class="stat-card"><div class="stat-value">{{ total_functions }}</div><div class="stat-label">Functions</div></div>
-    <div class="stat-card"><div class="stat-value">{{ total_smells }}</div><div class="stat-label">Smells</div></div>
-  </div>
-  <div class="grid-2">
-    <div>
-      <h2>Languages</h2>
-      <div class="chart-container"><canvas id="langChart"></canvas></div>
+<!-- 05 — CODEBASE OVERVIEW -->
+<div class="row full">
+  <div>
+    <div class="sec">05 — Codebase Overview</div>
+    <div class="stats4">
+      <div><div class="stat-val">{{ total_files }}</div><div class="stat-lbl">Files</div></div>
+      <div><div class="stat-val">{{ total_code_lines_fmt }}</div><div class="stat-lbl">Code Lines</div></div>
+      <div><div class="stat-val">{{ total_functions }}</div><div class="stat-lbl">Functions</div></div>
+      <div><div class="stat-val">{{ total_smells }}</div><div class="stat-lbl">Smells</div></div>
     </div>
-    <div>
-      <h2>Code Composition</h2>
-      <div class="chart-container"><canvas id="compChart"></canvas></div>
+    <div class="chart-2">
+      <div>
+        <div class="chart-lbl">Languages</div>
+        <div class="chart-h"><canvas id="langChart"></canvas></div>
+      </div>
+      <div>
+        <div class="chart-lbl">Code Composition</div>
+        <div class="chart-h"><canvas id="compChart"></canvas></div>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════ COMPLEXITY HOTSPOTS -->
-<div class="section">
-  <div class="section-header">
-    <span class="section-icon">◈</span>
-    <span class="section-title">Complexity Analysis</span>
-    {% if hotspot_rows %}
-    <span class="section-badge">{{ hotspot_rows|length }} function{{ 's' if hotspot_rows|length != 1 else '' }} above threshold (CC ≥ 10)</span>
-    {% else %}
-    <span class="section-badge" style="color:var(--green);border-color:var(--green)">Score {{ complexity_score }}/100</span>
+<!-- 06 — DUPLICATION -->
+{% if duplication %}
+<hr class="divider">
+<div class="row">
+  <div>
+    <div class="sec">06 — Duplication</div>
+    <div class="dup3">
+      <div><div class="stat-val">{{ dup_pct }}%</div><div class="stat-lbl">of Code</div></div>
+      <div><div class="stat-val">{{ dup_pairs }}</div><div class="stat-lbl">Block Pairs</div></div>
+      <div><div class="stat-val">{{ dup_lines }}</div><div class="stat-lbl">Shared Lines</div></div>
+    </div>
+    {% if dup_pair_rows %}
+    <div class="tbl-wrap">
+      <table>
+        <tr><th>File A</th><th>Lines</th><th>File B</th><th>Lines</th><th>Match</th></tr>
+        {% for row in dup_pair_rows %}
+        <tr>
+          <td><code>{{ row.file_a.split('/')|last }}</code></td><td style="color:var(--muted)">{{ row.lines_a }}</td>
+          <td><code>{{ row.file_b.split('/')|last }}</code></td><td style="color:var(--muted)">{{ row.lines_b }}</td>
+          <td><span class="badge badge-{{ 'CRITICAL' if row.sim_num >= 0.95 else ('HIGH' if row.sim_num >= 0.85 else 'MEDIUM') }}">{{ row.sim }}</span></td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
     {% endif %}
   </div>
-  {% if hotspot_rows %}
-  <div class="card">
-    {% for h in hotspot_rows %}
-    <div class="hotspot-bar">
-      <div class="hotspot-fn">{{ h.name }}</div>
-      <div class="hotspot-track"><div class="hotspot-fill" style="width:{{ min(h.complexity * 5, 100) }}%"></div></div>
-      <div class="hotspot-val">{{ h.complexity }}</div>
-      <div class="hotspot-file muted">{{ h.path }}:{{ h.line }}</div>
-    </div>
-    {% endfor %}
+  <div class="note">
+    <div class="note-label">06 — Duplication</div>
+    <div class="note-head">{{ dup_pct }}% of lines shared.</div>
+    <div class="note-body">{{ dup_pairs }} block pair{{ 's' if dup_pairs != 1 else '' }} detected across {{ dup_lines }} unique lines. Blocks are identified by hash then confirmed with SequenceMatcher similarity ≥ 85%.</div>
   </div>
-  {% elif top_complexity_files %}
-  <div class="card" style="display:flex;gap:2rem;align-items:flex-start;flex-wrap:wrap">
-    <div style="flex:0 0 auto">
-      <span class="badge badge-ok" style="font-size:0.85rem;padding:0.3rem 0.8rem">✓ NO HOTSPOTS</span>
-      <p style="margin-top:0.75rem;font-size:0.875rem;color:var(--muted);max-width:280px">
-        No functions exceed the complexity threshold (CC ≥ 10).<br>
-        Complexity score: <strong style="color:var(--green)">{{ complexity_score }}/100</strong>.
-      </p>
-    </div>
-    <div style="flex:1;min-width:300px">
-      <div style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.6rem">Top files by max complexity</div>
-      {% for f in top_complexity_files %}
-      <div class="hotspot-bar">
-        <div class="hotspot-fn" style="min-width:200px">{{ f.path.split('/')|last }}</div>
-        <div class="hotspot-track"><div class="hotspot-fill" style="width:{{ min(f.max_cc * 10, 100) }}%;background:var(--blue)"></div></div>
-        <div class="hotspot-val" style="color:var(--blue)">{{ f.max_cc }}</div>
-        <div class="hotspot-file muted">{{ f.path }}</div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-  {% else %}
-  <div class="card" style="text-align:center;padding:2rem">
-    <span class="badge badge-ok" style="font-size:0.85rem;padding:0.3rem 0.8rem">✓ CLEAN</span>
-    <p style="margin-top:0.75rem;color:var(--muted);font-size:0.875rem">No complexity data available for this file type.</p>
-  </div>
-  {% endif %}
-</div>
-
-<!-- ════════════════════════════════════════════════════ DUPLICATION -->
-{% if duplication %}
-<div class="section">
-  <div class="section-header">
-    <span class="section-icon">⧉</span>
-    <span class="section-title">Code Duplication</span>
-    <span class="section-badge">{{ dup_pct }}% of lines appear in shared patterns</span>
-  </div>
-  <div class="grid-3" style="margin-bottom:1.25rem">
-    <div class="stat-card">
-      <div class="stat-value">{{ dup_pairs }}</div>
-      <div class="stat-label">Shared Block Pairs</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value">{{ dup_lines }}</div>
-      <div class="stat-label">Unique Shared Lines</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value">{{ dup_pct }}%</div>
-      <div class="stat-label">of Total Code</div>
-    </div>
-  </div>
-  {% if dup_pair_rows %}
-  <div class="card table-wrap">
-    <table>
-      <tr><th>File A</th><th>Lines</th><th>File B</th><th>Lines</th><th>Match</th></tr>
-      {% for row in dup_pair_rows %}
-      <tr>
-        <td><code>{{ row.file_a }}</code></td><td class="muted">{{ row.lines_a }}</td>
-        <td><code>{{ row.file_b }}</code></td><td class="muted">{{ row.lines_b }}</td>
-        <td><span class="badge badge-{{ 'CRITICAL' if row.sim_num >= 0.95 else ('HIGH' if row.sim_num >= 0.85 else 'MEDIUM') }}">{{ row.sim }}</span></td>
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-  {% endif %}
 </div>
 {% endif %}
 
-<!-- ═════════════════════════════════════════════════ CODE SMELLS -->
+<!-- 07 — CODE SMELLS -->
 {% if smell_summary %}
-<div class="section">
-  <div class="section-header">
-    <span class="section-icon">◉</span>
-    <span class="section-title">Code Smells</span>
-    <span class="section-badge">{{ total_smells }} total across {{ total_files }} files</span>
+<hr class="divider">
+<div class="row">
+  <div>
+    <div class="sec">07 — Code Smells</div>
+    <div class="chart-h"><canvas id="smellChart"></canvas></div>
   </div>
-  <div class="grid-2">
-    <div class="card">
-      <h2 style="margin-bottom:0.75rem">By Type</h2>
-      {% for row in smell_summary %}
-      <div class="hotspot-bar">
-        <div class="hotspot-fn" style="min-width:180px">{{ row.type }}</div>
-        <div class="hotspot-track"><div class="hotspot-fill" style="width:{{ min(row.count * 6, 100) }}%;background:var(--med)"></div></div>
-        <div class="hotspot-val">{{ row.count }}</div>
+  <div class="note">
+    <div class="note-label">07 — Code Smells</div>
+    <div class="note-head">{{ total_smells }} smell{{ 's' if total_smells != 1 else '' }} detected.</div>
+    <div class="note-body">
+      {% for row in smell_summary[:4] %}
+      <div style="display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px solid var(--light)">
+        <span>{{ row.type.replace('_', ' ') }}</span>
+        <strong style="color:var(--text)">{{ row.count }}</strong>
       </div>
       {% endfor %}
-    </div>
-    <div class="chart-container" style="max-height:220px">
-      <canvas id="smellChart"></canvas>
     </div>
   </div>
 </div>
 {% endif %}
 
-<!-- ═══════════════════════════════════════════════════ FILE TABLE -->
-<div class="section">
-  <div class="section-header">
-    <span class="section-icon">▤</span>
-    <span class="section-title">All Files</span>
-    <span class="section-badge">sorted by risk</span>
-  </div>
-  <div class="card table-wrap">
-    <table id="fileTable">
-      <tr>
-        <th>File</th><th>Risk</th><th>Lang</th><th>Lines</th>
-        <th>Code</th><th>Fn</th><th>Max CC</th><th>Smells</th>
-      </tr>
-      {% for f in file_rows %}
-      <tr class="row-{{ f.risk_label|lower }}">
-        <td><code>{{ f.path }}</code></td>
-        <td>
-          <span class="badge badge-{{ f.risk_label }}">{{ f.risk_score }}</span>
-        </td>
-        <td><span class="badge" style="background:var(--surface2);color:var(--muted)">{{ f.language }}</span></td>
-        <td>{{ f.lines }}</td>
-        <td>{{ f.code_lines }}</td>
-        <td>{{ f.functions }}</td>
-        <td>{% if f.max_cc %}<span style="color:{% if f.max_cc >= 15 %}var(--crit){% elif f.max_cc >= 10 %}var(--high){% else %}var(--text){% endif %}">{{ f.max_cc }}</span>{% else %}—{% endif %}</td>
-        <td>{% if f.smell_count %}<span class="badge badge-{{ 'HIGH' if f.smell_count >= 5 else 'MEDIUM' }}">{{ f.smell_count }}</span>{% else %}—{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </table>
+<hr class="divider">
+
+<!-- 08 — ALL FILES -->
+<div class="row full">
+  <div>
+    <div class="sec">08 — All Files &nbsp;·&nbsp; click any column to sort</div>
+    <div class="tbl-wrap">
+      <table id="fileTable">
+        <tr><th>File</th><th>Risk</th><th>Lang</th><th>Lines</th><th>Code</th><th>Fn</th><th>Max CC</th><th>Smells</th></tr>
+        {% for f in file_rows %}
+        <tr class="row-{{ f.risk_label|lower }}">
+          <td><code>{{ f.path }}</code></td>
+          <td><span class="badge badge-{{ f.risk_label }}">{{ f.risk_score }}</span></td>
+          <td><span class="badge badge-lang">{{ f.language }}</span></td>
+          <td>{{ f.lines }}</td>
+          <td>{{ f.code_lines }}</td>
+          <td>{{ f.functions }}</td>
+          <td>{% if f.max_cc %}<span style="color:{% if f.max_cc >= 15 %}var(--crit){% elif f.max_cc >= 10 %}var(--high){% else %}var(--text){% endif %}">{{ f.max_cc }}</span>{% else %}—{% endif %}</td>
+          <td>{% if f.smell_count %}<span class="badge badge-{{ 'HIGH' if f.smell_count >= 5 else 'MEDIUM' }}">{{ f.smell_count }}</span>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
   </div>
 </div>
 
-<div style="text-align:center;color:var(--muted);font-size:0.8rem;margin-top:3rem">
-  Generated by <strong>CodeSpy</strong> v0.1.0 &nbsp;·&nbsp; {{ scanned_at }}
-</div>
+<footer class="footer">
+  Generated by CodeSpy v0.1.0 &nbsp;·&nbsp; {{ scanned_at }} &nbsp;·&nbsp; {{ total_files }} files in {{ duration_seconds }}s
+</footer>
 
-</div><!-- /page -->
+</div>
 
 <script>
-const CHART_COLORS = ['#6366f1','#22c55e','#eab308','#ef4444','#3b82f6','#f97316','#a855f7','#14b8a6','#f43f5e','#8b5cf6'];
-const CHART_DEFAULTS = { plugins: { legend: { labels: { color: '#e2e8f0', font: { size: 12 } } } }, responsive: true, maintainAspectRatio: false };
-
+const PAL = ['#a5b4fc','#fb923c','#86efac','#c084fc','#67e8f9','#fde68a','#f9a8d4','#6ee7b7','#94a3b8','#fca5a5'];
+const LOPTS = {
+  plugins: { legend: { labels: { color: '#6b6b6b', font: { size: 11 } } } },
+  responsive: true, maintainAspectRatio: false
+};
 new Chart(document.getElementById('langChart'), {
   type: 'doughnut',
-  data: { labels: {{ lang_labels }}, datasets: [{ data: {{ lang_values }}, backgroundColor: CHART_COLORS }] },
-  options: CHART_DEFAULTS,
+  data: { labels: {{ lang_labels }}, datasets: [{ data: {{ lang_values }}, backgroundColor: PAL, borderWidth: 2, borderColor: '#fafaf8' }] },
+  options: { ...LOPTS, cutout: '52%' },
 });
 new Chart(document.getElementById('compChart'), {
   type: 'doughnut',
-  data: { labels: ['Code', 'Comments', 'Blank'], datasets: [{ data: [{{ total_code_lines }}, {{ total_comment_lines }}, {{ total_blank_lines }}], backgroundColor: ['#6366f1','#22c55e','#252840'] }] },
-  options: CHART_DEFAULTS,
+  data: { labels: ['Code', 'Comments', 'Blank'], datasets: [{ data: [{{ total_code_lines }}, {{ total_comment_lines }}, {{ total_blank_lines }}], backgroundColor: ['#a5b4fc','#86efac','#e5e5e0'], borderWidth: 2, borderColor: '#fafaf8' }] },
+  options: { ...LOPTS, cutout: '52%' },
 });
 {% if smell_chart_labels %}
 new Chart(document.getElementById('smellChart'), {
   type: 'bar',
-  data: { labels: {{ smell_chart_labels }}, datasets: [{ label: 'Count', data: {{ smell_chart_values }}, backgroundColor: '#eab308aa', borderColor: '#eab308', borderWidth: 1 }] },
-  options: { ...CHART_DEFAULTS, indexAxis: 'y', plugins: { ...CHART_DEFAULTS.plugins, legend: { display: false } }, scales: { x: { ticks: { color: '#7a859a' }, grid: { color: '#252840' } }, y: { ticks: { color: '#e2e8f0', font: { size: 11 } }, grid: { display: false } } } },
+  data: { labels: {{ smell_chart_labels }}, datasets: [{ label: 'Count', data: {{ smell_chart_values }}, backgroundColor: '#a5b4fc', borderColor: '#818cf8', borderWidth: 1 }] },
+  options: { ...LOPTS, indexAxis: 'y',
+    plugins: { ...LOPTS.plugins, legend: { display: false } },
+    scales: {
+      x: { ticks: { color: '#6b6b6b', font: { size: 11 } }, grid: { color: '#f0f0ec' } },
+      y: { ticks: { color: '#1a1a1a', font: { size: 11 } }, grid: { display: false } }
+    }
+  },
 });
 {% endif %}
-
-// Simple client-side table sort
 document.querySelectorAll('#fileTable th').forEach((th, i) => {
   th.addEventListener('click', () => {
-    const table = document.getElementById('fileTable');
-    const rows = Array.from(table.querySelectorAll('tr')).slice(1);
-    const asc = th.dataset.asc !== 'true';
-    th.dataset.asc = asc;
+    const tbl = document.getElementById('fileTable');
+    const rows = Array.from(tbl.querySelectorAll('tr')).slice(1);
+    const asc = th.dataset.asc !== 'true'; th.dataset.asc = asc;
     rows.sort((a, b) => {
-      const av = a.cells[i].innerText.trim();
-      const bv = b.cells[i].innerText.trim();
+      const av = a.cells[i].innerText.trim(), bv = b.cells[i].innerText.trim();
       const an = parseFloat(av), bn = parseFloat(bv);
       if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
       return asc ? av.localeCompare(bv) : bv.localeCompare(av);
     });
-    rows.forEach(r => table.appendChild(r));
+    rows.forEach(r => tbl.appendChild(r));
   });
 });
 </script>
@@ -848,6 +799,16 @@ def generate(result: ScanResult) -> str:
     top_risks = _compute_file_risks(result)[:6]
     actions = _recommended_actions(result)
     summary = _executive_summary(result, actions, top_risks)
+
+    # Editorial headline for annotation card
+    _grade_headlines = {
+        "A": f"Grade {q.grade if q else '?'}. Clean codebase.",
+        "B": f"Grade {q.grade if q else '?'}. Good shape with minor issues.",
+        "C": f"Grade {q.grade if q else '?'}. Moderate issues need addressing.",
+        "D": f"Grade {q.grade if q else '?'}. High debt — act before scaling.",
+        "F": f"Grade {q.grade if q else '?'}. Critical condition.",
+    }
+    grade_headline = _grade_headlines.get(q.grade if q else "", f"Score {q.score if q else 0}/100")
 
     # Score dimensions
     score_dims = []
@@ -939,6 +900,7 @@ def generate(result: ScanResult) -> str:
         "total_functions": f"{result.total_functions:,}",
         "total_smells": result.total_smells,
         "executive_summary": summary,
+        "grade_headline": grade_headline,
         "top_risks": top_risks,
         "actions": actions,
         "score_dims": score_dims,
