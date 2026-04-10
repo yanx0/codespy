@@ -30,17 +30,16 @@ The success signal is binary and scanner-verified — not a code review opinion.
 ```bash
 git clone https://github.com/yanx0/codespy.git
 cd codespy
+
+# Create a virtual environment (recommended — avoids system Python conflicts)
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 
-codespy ./my-project        # scan → HTML report opens in browser
+codespy ./my-project        # scan → generates report.html + report.json
 codespy target ./my-project # find the highest-priority function to fix
 ```
 
-> **macOS + Homebrew Python?** If `pip install` fails with "externally-managed-environment":
-> ```bash
-> pip install -e . --break-system-packages
-> # or use a venv: python3 -m venv .venv && source .venv/bin/activate && pip install -e .
-> ```
+The HTML report opens automatically in your default browser on macOS and most desktop Linux environments. Use `--no-open` to suppress this, or `-q` for fully quiet output.
 
 ---
 
@@ -88,27 +87,30 @@ codespy target ./my-project
 }
 ```
 
-Files are ranked by a composite risk score: complexity (40%), smells (35%), duplication (15%), size (10%). A file must have a hotspot (CC ≥ 10) or two structural smells to qualify — noise is filtered out.
+Files are ranked by a **per-file risk score**: complexity (40%), smells (35%), duplication (15%), size (10%). A file must have a hotspot (CC ≥ 10) or at least two structural smells to qualify — low-signal files are filtered out.
 
 ---
 
 ## What gets measured
 
-| Dimension | Method | Weight in score |
+| Dimension | Method | Quality score weight |
 |---|---|---|
-| Cyclomatic complexity | AST-precise for Python; regex for JS/TS/Go/Java/SQL | 40% |
+| Cyclomatic complexity | AST-precise for Python; regex for JS/TS/Go/Java/SQL/others | 40% |
 | Code smells | Long functions, deep nesting, too many args, magic numbers, long files, TODOs | 35% |
 | Duplication | Hash-first 6-line window matching + SequenceMatcher ≥ 85% similarity | 25% |
 
-Quality score: 0–100 composite with letter grade A–F. Sub-scores for each dimension.
+**Quality score** (0–100, letter grade A–F) uses the weights above.
+**Per-file risk score** (used by `codespy target`) uses a separate formula: complexity 40%, smells 35%, duplication 15%, size 10%.
+
 Hotspot threshold: CC ≥ 10 flagged, CC ≥ 15 critical.
+51 file extensions supported.
 
 ---
 
 ## Usage
 
 ```bash
-# Scan (HTML report auto-opens in browser)
+# Scan (HTML report auto-opens in browser on supported platforms)
 codespy ./my-project
 
 # Other report formats
@@ -121,7 +123,7 @@ codespy ./my-project --no-duplication
 # Exclude paths
 codespy ./my-project --exclude "*/migrations/*" --exclude "*/vendor/*"
 
-# Quiet mode (no browser, no progress output)
+# Quiet / CI mode (no browser, no progress output)
 codespy ./my-project -q --no-open
 ```
 
@@ -158,11 +160,13 @@ Optional (auto-detected at runtime):
 
 ## Troubleshooting
 
-**`command not found: codespy`** — Run `pip install -e . --break-system-packages` from the repo root, then open a new terminal.
+**`command not found: codespy`** — Run `pip install -e .` from inside the activated venv, then verify with `codespy --version`.
+
+**`pip install` fails with "externally-managed-environment"** — You're using a Homebrew-managed Python without a venv. Either use a venv (recommended) or add `--break-system-packages`.
 
 **`Unknown skill: refactor-loop`** — Claude Code must be launched from inside the `codespy` directory. Exit and run `cd ~/codespy && claude`.
 
-**`No module named pytest`** — Install pytest: `pip install pytest --break-system-packages`, or activate your venv first.
+**`No module named pytest`** — Activate your venv first (`. .venv/bin/activate`), then run `pip install -e ".[dev]"`.
 
 ---
 
