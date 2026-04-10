@@ -849,7 +849,7 @@ def generate(result: ScanResult) -> str:
     q = result.quality
 
     # Precompute risk data
-    top_risks = _compute_file_risks(result)[:6]
+    top_risks = [r for r in _compute_file_risks(result) if r["label"] != "LOW"][:6]
     actions = _recommended_actions(result)
     summary = _executive_summary(result, actions, top_risks)
 
