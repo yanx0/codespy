@@ -1,11 +1,112 @@
 """CLI entry point."""
 
+import json
 import sys
 from pathlib import Path
 
 from .scanner import ScanConfig, scan
 from .reporters import json_reporter, html_reporter, md_reporter
 
+
+# ---------------------------------------------------------------------------
+# target subcommand — used by the refactor-loop command
+# ---------------------------------------------------------------------------
+
+def _top_target(result) -> dict | None:
+    """Return the highest-priority refactoring target from a scan result."""
+    from .reporters.html_reporter import _file_risk_score, _risk_label
+
+    dup_files: set[str] = set()
+    if result.duplication:
+        for p in result.duplication.pairs:
+            dup_files.add(p.file_a)
+            dup_files.add(p.file_b)
+
+    best = None
+    best_score = -1
+
+    for f in result.files:
+        score = _file_risk_score(f, dup_files)
+        if score <= best_score:
+            continue
+
+        # Require at least one meaningful signal
+        has_hotspot = f.complexity and bool(f.complexity.hotspots)
+        has_smells = len([s for s in f.smells if s.type not in ("todo_fixme",)]) >= 2
+        if not (has_hotspot or has_smells):
+            continue
+
+        best_score = score
+        best = f
+
+    if best is None:
+        # Fallback: any file with a hotspot
+        for f in result.files:
+            if f.complexity and f.complexity.hotspots:
+                best = f
+                best_score = _file_risk_score(f, dup_files)
+                break
+
+    if best is None:
+        return None
+
+    # Build the target record
+    hotspot = None
+    if best.complexity and best.complexity.hotspots:
+        hotspot = best.complexity.hotspots[0]  # already sorted by complexity desc
+
+    top_smells = [s for s in best.smells if s.type not in ("todo_fixme", "magic_number")][:3]
+
+    return {
+        "file": best.path,
+        "language": best.language,
+        "risk_score": best_score,
+        "risk_label": _risk_label(best_score),
+        "complexity_score": best.complexity.average if best.complexity else None,
+        "function": hotspot.name if hotspot else None,
+        "function_line": hotspot.line if hotspot else None,
+        "function_cc": hotspot.complexity if hotspot else None,
+        "top_smells": [
+            {"type": s.type, "name": s.name, "line": s.line, "detail": s.detail}
+            for s in top_smells
+        ],
+        "action": (
+            f"Refactor `{hotspot.name}` — cyclomatic complexity {hotspot.complexity} "
+            f"(target: below 10)"
+            if hotspot else
+            f"Address {len(top_smells)} structural smell(s) in this file"
+        ),
+        "success_signal": (
+            f"Re-scan shows `{hotspot.name}` CC drops by ≥2 points or falls below 10"
+            if hotspot else
+            f"Re-scan shows smell count decreases"
+        ),
+    }
+
+
+def _run_target(path: str, exclude: list[str]) -> None:
+    """Scan and print the top refactoring target as JSON."""
+    if not Path(path).exists():
+        print(f"Error: path does not exist: {path}", file=sys.stderr)
+        sys.exit(1)
+
+    config = ScanConfig(
+        analyze_duplication=False,  # skip for speed — not needed for target finding
+        exclude_globs=exclude,
+        quiet=True,
+    )
+    result = scan(path, config)
+    target = _top_target(result)
+
+    if target is None:
+        print(json.dumps({"error": "No high-priority target found — code looks clean!"}))
+    else:
+        print(json.dumps(target, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# scan subcommand (existing behaviour)
+# ---------------------------------------------------------------------------
 
 def _argparse_main() -> None:
     import argparse
@@ -14,6 +115,45 @@ def _argparse_main() -> None:
         prog="codespy",
         description="Analyze code quality of a directory or file.",
     )
+    subparsers = parser.add_subparsers(dest="command")
+
+    # --- scan (default) ---
+    scan_p = subparsers.add_parser("scan", help="Scan a directory and generate reports")
+    _add_scan_args(scan_p)
+
+    # --- target ---
+    target_p = subparsers.add_parser(
+        "target",
+        help="Find the highest-priority refactoring target in a directory",
+    )
+    target_p.add_argument("path", help="Directory or file to scan")
+    target_p.add_argument("--exclude", action="append", default=[], metavar="GLOB",
+                          help="Exclude files matching glob (repeatable)")
+
+    args = parser.parse_args()
+
+    if args.command == "target":
+        _run_target(args.path, args.exclude)
+    else:
+        # Default: treat positional as scan (backwards-compatible)
+        if args.command is None:
+            # Re-parse without subcommands for backwards compat
+            _argparse_scan_compat()
+        else:
+            _run(args)
+
+
+def _argparse_scan_compat() -> None:
+    """Backwards-compatible argparse scan (no subcommand needed)."""
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="codespy")
+    _add_scan_args(parser)
+    args = parser.parse_args()
+    _run(args)
+
+
+def _add_scan_args(parser) -> None:
     parser.add_argument("path", help="Directory or file to scan")
     parser.add_argument("--output-json", default="report.json", metavar="PATH",
                         help="JSON output path (default: report.json)")
@@ -27,12 +167,9 @@ def _argparse_main() -> None:
     parser.add_argument("--ignore", nargs="*", default=[], metavar="PATTERN",
                         help="Extra dir names to ignore (legacy)")
     parser.add_argument("--exclude", action="append", default=[], metavar="GLOB",
-                        help="Exclude files matching glob pattern, e.g. '*/target/*' (repeatable)")
+                        help="Exclude files matching glob (repeatable)")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress progress output")
     parser.add_argument("--version", action="version", version="codespy 0.1.0")
-
-    args = parser.parse_args()
-    _run(args)
 
 
 def _run(args) -> None:
@@ -45,8 +182,8 @@ def _run(args) -> None:
         analyze_complexity=not args.no_complexity,
         analyze_smells=not args.no_smells,
         analyze_duplication=not args.no_duplication,
-        extra_ignores=list(args.ignore),
-        exclude_globs=list(args.exclude),
+        extra_ignores=list(args.ignore) if args.ignore else [],
+        exclude_globs=list(args.exclude) if args.exclude else [],
         quiet=args.quiet,
     )
 
@@ -74,7 +211,6 @@ def _run(args) -> None:
 
 def _write_csv(result, output_path: str) -> None:
     import csv
-    from pathlib import Path
 
     rows = [
         ["path", "language", "lines", "code_lines", "comment_lines",
@@ -92,12 +228,29 @@ def _write_csv(result, output_path: str) -> None:
         csv.writer(fh).writerows(rows)
 
 
+# ---------------------------------------------------------------------------
+# main — dispatches to click or argparse
+# ---------------------------------------------------------------------------
+
 def main() -> None:
+    # Route to target subcommand if first real arg is "target"
+    real_args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if real_args and real_args[0] == "target":
+        # Remove "target" from argv and dispatch
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        import argparse
+        parser = argparse.ArgumentParser(prog="codespy target")
+        parser.add_argument("path", help="Directory or file to scan")
+        parser.add_argument("--exclude", action="append", default=[], metavar="GLOB")
+        args = parser.parse_args()
+        _run_target(args.path, args.exclude)
+        return
+
     try:
         import click
         _click_main()
     except ImportError:
-        _argparse_main()
+        _argparse_scan_compat()
 
 
 def _click_main() -> None:
@@ -114,16 +267,14 @@ def _click_main() -> None:
     @click.option("--no-duplication", is_flag=True, help="Skip duplication analysis")
     @click.option("--no-smells", is_flag=True, help="Skip smell detection")
     @click.option("--ignore", multiple=True, help="Extra dir names to ignore (legacy)")
-    @click.option("--exclude", multiple=True, help="Exclude files matching glob, e.g. '*/target/*' (repeatable)")
+    @click.option("--exclude", multiple=True, help="Exclude files matching glob (repeatable)")
     @click.option("-q", "--quiet", is_flag=True, help="Suppress progress output")
     @click.version_option("0.1.0", prog_name="codespy")
     def cli(path, output_json, report, report_out, no_complexity,
             no_duplication, no_smells, ignore, exclude, quiet):
         """Analyze code quality of a directory or file."""
-
         class _Args:
             pass
-
         args = _Args()
         args.path = path
         args.output_json = output_json
