@@ -1,99 +1,81 @@
-# codespy
+# CodeSpy
 
-A zero-dependency CLI code quality scanner — and AI-powered refactoring assistant — for any codebase.
+**Scan your codebase. Find what to fix first. Verify the fix worked.**
+
+Most code quality tools tell you what's wrong. CodeSpy tells you where to start — and closes the loop by verifying that your refactoring actually improved the score.
+
+Zero required dependencies. Pure Python. Works on any codebase in seconds.
+
+---
+
+## Why CodeSpy
+
+Technical debt is rarely evenly distributed. One function with cyclomatic complexity 22 is worth more attention than thirty minor style issues — but most scanners treat them as equals and dump a flat list.
+
+CodeSpy is built around a different model:
+
+| Step | Command | Output |
+|---|---|---|
+| **Measure** | `codespy ./project` | Editorial HTML dashboard, 0–100 quality score, risk-ranked file list |
+| **Prioritize** | `codespy target ./project` | Single highest-risk function as machine-readable JSON |
+| **Refactor** | `/refactor-loop` in Claude Code | Concrete diff proposed, applied on approval |
+| **Verify** | Auto re-scan | Scanner confirms CC dropped ≥ 2 points or fell below 10 |
+
+The success signal is binary and scanner-verified — not a code review opinion.
+
+---
 
 ## Quick Start
 
 ```bash
-# 1. Clone and install
 git clone https://github.com/yanx0/codespy.git
 cd codespy
 pip install -e .
 
-# 2. Scan a project
-codespy ./my-project
-# → generates report.html + report.json and auto-opens the report in your browser
-
-# 3. Find the worst function to refactor
-codespy target ./my-project
+codespy ./my-project        # scan → HTML report opens in browser
+codespy target ./my-project # find the highest-priority function to fix
 ```
 
-> **On macOS with Homebrew Python**, `pip install` may fail with "externally-managed-environment".
-> Use one of these instead:
+> **macOS + Homebrew Python?** If `pip install` fails with "externally-managed-environment":
 > ```bash
-> # Option A — install anyway (simplest)
 > pip install -e . --break-system-packages
->
-> # Option B — virtual environment (cleaner)
-> python3 -m venv .venv && source .venv/bin/activate
-> pip install -e .
+> # or use a venv: python3 -m venv .venv && source .venv/bin/activate && pip install -e .
 > ```
 
-After install, verify it works:
+---
 
-```bash
-codespy --version   # codespy, version 0.1.0
-codespy tests/fixtures --no-duplication -q
-# → Quality score: .../100 (Grade .)
+## The Refactor Loop
+
+The standout feature. Launch Claude Code from the repo root and run:
+
 ```
+/refactor-loop ./my-project
+```
+
+Claude will:
+1. Run `codespy target` to find the highest-risk function
+2. Read the function and propose a concrete refactoring with a diff
+3. Apply the edit on your approval
+4. Re-scan and report the before/after CC
+
+```
+Before: parse_token  CC=22  complexity_score=10.3
+After:  parse_token  CC=11  complexity_score=7.1
+
+✓ VERIFIED — complexity dropped by 11 points
+```
+
+> **Setup:** Claude Code loads custom commands from `.claude/commands/` at startup.
+> Launch it from inside the `codespy` directory: `cd ~/codespy && claude`
+> If you see `Unknown skill: refactor-loop`, you launched from the wrong directory.
 
 ---
 
-## Features
-
-- **Language detection** — 50+ file extensions
-- **Metrics** — lines of code, comments, blanks, function & class counts
-- **Cyclomatic complexity** — AST-precise for Python, regex-based for everything else; flags hotspots ≥ 10
-- **Code smell detection** — long functions, too many parameters, deep nesting, magic numbers, long files, TODO/FIXME markers
-- **Duplication analysis** — hash-first block matching + similarity scoring across all files
-- **Quality score** — 0–100 composite with letter grade (A–F), three sub-scores
-- **Reports** — editorial-style HTML dashboard (Chart.js), Markdown tables, or CSV
-- **Refactor target** — `codespy target` finds the highest-priority function to fix, outputs a machine-readable JSON action plan
-- **Refactor loop** — `/refactor-loop` Claude command drives a scan → propose → apply → re-scan feedback loop
-
-## Requirements
-
-Python 3.11+. No mandatory third-party dependencies.
-
-Optional (auto-detected):
-- `click` — nicer CLI experience
-- `jinja2` — HTML template rendering (falls back to built-in renderer if absent)
-
----
-
-## Usage
-
-### Scan
-
-```bash
-# Scan a directory, output HTML report (default)
-codespy ./my-project
-
-# "scan" keyword is also accepted
-codespy scan ./my-project
-
-# Markdown report
-codespy ./my-project --report md --report-out summary.md
-
-# Skip slow analyses (useful for large repos)
-codespy ./my-project --no-duplication --no-smells
-
-# Exclude paths by glob (repeatable)
-codespy ./my-project --exclude "*/migrations/*" --exclude "*/vendor/*"
-
-# Custom output paths
-codespy ./my-project --output-json results.json --report-out dashboard.html
-```
-
-Reports are written to the **current directory**, not the scanned directory.
-
-### Find the top refactoring target
+## `codespy target` — machine-readable prioritization
 
 ```bash
 codespy target ./my-project
 ```
-
-Outputs JSON with the highest-priority file and function:
 
 ```json
 {
@@ -106,78 +88,89 @@ Outputs JSON with the highest-priority file and function:
 }
 ```
 
-### Refactor loop (Claude Code)
+Files are ranked by a composite risk score: complexity (40%), smells (35%), duplication (15%), size (10%). A file must have a hotspot (CC ≥ 10) or two structural smells to qualify — noise is filtered out.
 
-Launch Claude Code **from inside the `codespy` directory** (commands are loaded at startup):
+---
+
+## What gets measured
+
+| Dimension | Method | Weight in score |
+|---|---|---|
+| Cyclomatic complexity | AST-precise for Python; regex for JS/TS/Go/Java/SQL | 40% |
+| Code smells | Long functions, deep nesting, too many args, magic numbers, long files, TODOs | 35% |
+| Duplication | Hash-first 6-line window matching + SequenceMatcher ≥ 85% similarity | 25% |
+
+Quality score: 0–100 composite with letter grade A–F. Sub-scores for each dimension.
+Hotspot threshold: CC ≥ 10 flagged, CC ≥ 15 critical.
+
+---
+
+## Usage
 
 ```bash
-cd ~/codespy
-claude
+# Scan (HTML report auto-opens in browser)
+codespy ./my-project
+
+# Other report formats
+codespy ./my-project --report md --report-out summary.md
+codespy ./my-project --report csv
+
+# Skip slow analyses on large repos
+codespy ./my-project --no-duplication
+
+# Exclude paths
+codespy ./my-project --exclude "*/migrations/*" --exclude "*/vendor/*"
+
+# Quiet mode (no browser, no progress output)
+codespy ./my-project -q --no-open
 ```
 
-Then in the Claude Code session:
+Reports are written to the **current directory**, not the scanned directory.
 
-```
-/refactor-loop ./my-project
-```
-
-Claude will find the target, propose a concrete diff, apply it on approval, and re-scan to verify the complexity dropped. See `.claude/commands/refactor-loop.md` for the full workflow spec.
-
-> **Note:** If you see `Unknown skill: refactor-loop`, you launched Claude Code from a different directory. Exit and relaunch from inside `~/codespy`.
-
-### All scan flags
+### All flags
 
 | Flag | Default | Description |
 |---|---|---|
 | `PATH` | required | Directory or file to scan |
-| `--output-json PATH` | `report.json` | JSON output path |
 | `--report html\|md\|csv` | `html` | Report format |
 | `--report-out PATH` | `report.<ext>` | Report output path |
-| `--no-complexity` | off | Skip cyclomatic complexity |
+| `--output-json PATH` | `report.json` | JSON output path |
+| `--no-complexity` | off | Skip complexity analysis |
 | `--no-duplication` | off | Skip duplication analysis |
 | `--no-smells` | off | Skip smell detection |
 | `--exclude GLOB` | — | Exclude files matching glob (repeatable) |
-| `--ignore PATTERN` | — | Extra dir names to ignore (legacy, repeatable) |
+| `--no-open` | off | Do not auto-open HTML report |
 | `-q / --quiet` | off | Suppress progress output |
-| `--no-open` | off | Do not auto-open HTML report in browser |
-| `--version` | — | Print version |
 
-Default ignored directories: `.git`, `__pycache__`, `.venv`, `venv`, `node_modules`, `dist`, `build`, `target`, `dbt_packages`.
+Default ignored: `.git`, `__pycache__`, `.venv`, `venv`, `node_modules`, `dist`, `build`, `target`, `dbt_packages`.
+
+---
+
+## Requirements
+
+Python 3.11+. No required third-party dependencies.
+
+Optional (auto-detected at runtime):
+- `click` — improved CLI experience
+- `jinja2` — HTML template rendering (stdlib fallback included)
 
 ---
 
 ## Troubleshooting
 
-**`zsh: command not found: codespy`**
-You haven't installed the package yet, or the install target isn't on your PATH. Run `pip install -e . --break-system-packages` from the repo root, then open a new terminal.
+**`command not found: codespy`** — Run `pip install -e . --break-system-packages` from the repo root, then open a new terminal.
 
-**`Error: Got unexpected extra argument (/path)`**
-This was a bug in older versions where `codespy scan <path>` wasn't recognized. Update to the latest version (`git pull && pip install -e .`). Both `codespy <path>` and `codespy scan <path>` now work.
+**`Unknown skill: refactor-loop`** — Claude Code must be launched from inside the `codespy` directory. Exit and run `cd ~/codespy && claude`.
 
-**`Unknown skill: refactor-loop`**
-Claude Code loads custom commands from `.claude/commands/` at startup. If you launched Claude Code from a parent directory and then `cd codespy`, the commands won't be found. Exit and relaunch: `cd ~/codespy && claude`.
-
-**`python3 -m pytest` fails with "No module named pytest"**
-pytest isn't installed in your active Python environment. Either activate the venv (`. .venv/bin/activate`) or install pytest: `pip install pytest --break-system-packages`.
-
-**Duplication shows > 100%**
-This was a bug in early versions — duplicate line counting summed pair ranges instead of counting unique lines. Fixed in the current version.
+**`No module named pytest`** — Install pytest: `pip install pytest --break-system-packages`, or activate your venv first.
 
 ---
 
 ## Running tests
 
 ```bash
-# With venv (recommended)
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-python3 -m pytest tests/ -v
-
-# Without venv (if pytest is already installed)
-python3 -m pytest tests/ -v
+python3 -m pytest tests/ -v   # expects: 21 passed
 ```
-
-Expected output: `21 passed`.
 
 ---
 
@@ -185,28 +178,22 @@ Expected output: `21 passed`.
 
 ```
 codespy/
-├── cli.py           — Entry point; scan + target subcommands
-├── scanner.py       — Traversal + analysis orchestration
-├── languages.py     — Language detection, comment syntax, ignore patterns
-├── metrics.py       — LOC counting, function/class extraction
-├── models.py        — Result dataclasses
-├── quality.py       — 0–100 scoring model
+├── cli.py              — scan + target subcommands
+├── scanner.py          — file traversal + analysis orchestration
+├── languages.py        — language detection, ignore patterns
+├── metrics.py          — single-pass LOC + function counting
+├── models.py           — result dataclasses
+├── quality.py          — 0–100 scoring model
 ├── analyzers/
-│   ├── complexity.py
-│   ├── smells.py
-│   └── duplication.py
+│   ├── complexity.py   — cyclomatic complexity
+│   ├── smells.py       — smell detection
+│   └── duplication.py  — hash-first block matching
 └── reporters/
+    ├── html_reporter.py — editorial dashboard
     ├── json_reporter.py
-    ├── html_reporter.py
     └── md_reporter.py
-tests/
-├── fixtures/        — Small source files used as test inputs
-└── test_*.py
-.claude/
-└── commands/
-    └── refactor-loop.md   — Claude Code slash command
+.claude/commands/
+└── refactor-loop.md    — Claude Code slash command spec
 ```
 
-## Architecture
-
-See [DESIGN.md](DESIGN.md) for key architectural decisions and trade-offs.
+See [DESIGN.md](DESIGN.md) for architecture decisions and trade-offs.
