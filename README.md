@@ -12,7 +12,7 @@ pip install -e .
 
 # 2. Scan a project
 codespy ./my-project
-# → opens report.html + report.json in the current directory
+# → generates report.html + report.json and auto-opens the report in your browser
 
 # 3. Find the worst function to refactor
 codespy target ./my-project
@@ -139,6 +139,7 @@ Claude will find the target, propose a concrete diff, apply it on approval, and 
 | `--exclude GLOB` | — | Exclude files matching glob (repeatable) |
 | `--ignore PATTERN` | — | Extra dir names to ignore (legacy, repeatable) |
 | `-q / --quiet` | off | Suppress progress output |
+| `--no-open` | off | Do not auto-open HTML report in browser |
 | `--version` | — | Print version |
 
 Default ignored directories: `.git`, `__pycache__`, `.venv`, `venv`, `node_modules`, `dist`, `build`, `target`, `dbt_packages`.
