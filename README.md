@@ -4,8 +4,6 @@
 
 CodeSpy measures complexity, smells, and duplication across any codebase, then surfaces the highest-risk function as a structured target. The included `/refactor-loop` Claude command proposes a concrete fix, applies it on approval, and re-scans to show you the before/after — no guessing whether the refactor helped.
 
-Zero required dependencies. Pure Python.
-
 ---
 
 ## Why CodeSpy
