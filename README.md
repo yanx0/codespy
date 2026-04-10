@@ -1,10 +1,10 @@
 # CodeSpy
 
-**Scan your codebase. Find what to fix first. Verify the fix worked.**
+**Scan. Prioritize. Refactor. Re-scan.**
 
-Most code quality tools tell you what's wrong. CodeSpy tells you where to start — and closes the loop by verifying that your refactoring actually improved the score.
+CodeSpy measures complexity, smells, and duplication across any codebase, then surfaces the highest-risk function as a structured target. The included `/refactor-loop` Claude command proposes a concrete fix, applies it on approval, and re-scans to show you the before/after — no guessing whether the refactor helped.
 
-Zero required dependencies. Pure Python. Works on any codebase in seconds.
+Zero required dependencies. Pure Python.
 
 ---
 
