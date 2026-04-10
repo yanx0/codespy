@@ -84,14 +84,14 @@ def _top_target(result) -> dict | None:
     }
 
 
-def _run_target(path: str, exclude: list[str]) -> None:
-    """Scan and print the top refactoring target as JSON."""
+def _run_target(path: str, exclude: list[str], human: bool = False) -> None:
+    """Scan and print the top refactoring target."""
     if not Path(path).exists():
         print(f"Error: path does not exist: {path}", file=sys.stderr)
         sys.exit(1)
 
     config = ScanConfig(
-        analyze_duplication=False,  # skip for speed — not needed for target finding
+        analyze_duplication=False,
         exclude_globs=exclude,
         quiet=True,
     )
@@ -99,9 +99,45 @@ def _run_target(path: str, exclude: list[str]) -> None:
     target = _top_target(result)
 
     if target is None:
-        print(json.dumps({"error": "No high-priority target found — code looks clean!"}))
+        if human:
+            print("\n  No high-priority target found — code looks clean!\n")
+        else:
+            print(json.dumps({"error": "No high-priority target found — code looks clean!"}))
+        return
+
+    if human:
+        _print_target_human(target)
     else:
         print(json.dumps(target, indent=2))
+
+
+def _print_target_human(t: dict) -> None:
+    """Print a target record in structured, human-readable format."""
+    W = 48
+    bar = "─" * W
+    fname = t["file"].split("/")[-1]
+    smells = t.get("top_smells", [])
+
+    why_parts = [f"CC={t['function_cc']}"]
+    for s in smells:
+        if s["type"] != "todo_fixme":
+            label = s["type"].replace("_", " ")
+            detail = f" ({s['detail']})" if s.get("detail") else ""
+            why_parts.append(f"{label}{detail}")
+    why = "  ·  ".join(why_parts[:3])
+
+    print(f"\n{bar}")
+    print(f"  REFACTOR TARGET")
+    print(bar)
+    print(f"  File      {fname}  [{t['risk_label']}  ·  risk {t['risk_score']}]")
+    if t.get("function"):
+        print(f"  Function  {t['function']}  ·  line {t.get('function_line', '?')}")
+    print(f"\n  Why       {why}")
+    print(f"\n  Action    {t['action']}")
+    print(f"\n  Signal    {t['success_signal']}")
+    print(f"\n{bar}")
+    print(f"  Run:  /refactor-loop {t['file'].rsplit('/', 1)[0] or '.'}  to apply with Claude")
+    print(f"{bar}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -129,11 +165,13 @@ def _argparse_main() -> None:
     target_p.add_argument("path", help="Directory or file to scan")
     target_p.add_argument("--exclude", action="append", default=[], metavar="GLOB",
                           help="Exclude files matching glob (repeatable)")
+    target_p.add_argument("--human", action="store_true",
+                          help="Human-readable output instead of JSON")
 
     args = parser.parse_args()
 
     if args.command == "target":
-        _run_target(args.path, args.exclude)
+        _run_target(args.path, args.exclude, human=getattr(args, "human", False))
     else:
         # Default: treat positional as scan (backwards-compatible)
         if args.command is None:
@@ -190,12 +228,9 @@ def _run(args) -> None:
 
     result = scan(target, config)
 
-    # Write JSON
+    # Write reports
     json_reporter.write(result, args.output_json)
-    if not args.quiet:
-        print(f"JSON report: {args.output_json}")
 
-    # Write human-readable report
     ext_map = {"html": "html", "md": "md", "csv": "csv"}
     report_out = args.report_out or f"report.{ext_map[args.report]}"
 
@@ -207,15 +242,22 @@ def _run(args) -> None:
         _write_csv(result, report_out)
 
     if not args.quiet:
+        W = 52
+        bar = "─" * W
         abs_path = Path(report_out).resolve()
+        json_path = Path(args.output_json).resolve()
+        print(bar)
         if args.report == "html":
-            print(f"Report (html): file://{abs_path}")
+            print(f"  Report:  file://{abs_path}")
+        else:
+            print(f"  Report:  {report_out}")
+        print(f"  JSON:    {json_path}")
+        print(f"{bar}\n")
+        if args.report == "html":
             no_open = getattr(args, "no_open", False)
             if not no_open:
                 import webbrowser
                 webbrowser.open(abs_path.as_uri())
-        else:
-            print(f"Report ({args.report}): {report_out}")
 
 
 def _write_csv(result, output_path: str) -> None:
@@ -254,8 +296,9 @@ def main() -> None:
         parser = argparse.ArgumentParser(prog="codespy target")
         parser.add_argument("path", help="Directory or file to scan")
         parser.add_argument("--exclude", action="append", default=[], metavar="GLOB")
+        parser.add_argument("--human", action="store_true")
         args = parser.parse_args()
-        _run_target(args.path, args.exclude)
+        _run_target(args.path, args.exclude, human=args.human)
         return
 
     try:

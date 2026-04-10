@@ -73,7 +73,8 @@ After:  parse_token  CC=11  complexity_score=7.1
 ## `codespy target` — machine-readable prioritization
 
 ```bash
-codespy target ./my-project
+codespy target ./my-project          # machine-readable JSON (default)
+codespy target ./my-project --human  # structured human-readable summary
 ```
 
 ```json

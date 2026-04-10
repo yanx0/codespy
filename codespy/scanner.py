@@ -163,7 +163,78 @@ def scan(target: str, config: Optional[ScanConfig] = None) -> ScanResult:
     result.quality = quality.compute(result)
 
     if not config.quiet:
-        q = result.quality
-        print(f"Quality score: {q.score}/100 (Grade {q.grade})")
+        _print_summary(result)
 
     return result
+
+
+def _print_summary(result: ScanResult) -> None:
+    """Print a structured, hierarchy-first scan summary."""
+    q = result.quality
+    if not q:
+        return
+
+    W = 52
+    bar = "─" * W
+
+    grade_color = {"A": "\033[32m", "B": "\033[32m", "C": "\033[33m",
+                   "D": "\033[33m", "F": "\033[31m"}.get(q.grade, "")
+    reset = "\033[0m"
+
+    # Sub-score notes
+    hotspot_count = sum(len(f.complexity.hotspots) for f in result.files if f.complexity)
+    serious_smells = sum(1 for f in result.files for s in f.smells
+                         if s.type not in ("todo_fixme",))
+    dup_pct = result.duplication.duplication_percent if result.duplication else 0.0
+
+    cc_note = (f"{hotspot_count} function{'s' if hotspot_count != 1 else ''} exceed CC ≥ 10"
+               if hotspot_count else "no hotspots above threshold")
+    smell_note = (f"{serious_smells} structural smell{'s' if serious_smells != 1 else ''} "
+                  f"across {result.total_files} file{'s' if result.total_files != 1 else ''}"
+                  if serious_smells else "no structural smells")
+    dup_note = (f"{dup_pct:.0f}% of lines in shared patterns"
+                if result.duplication else "not analysed")
+
+    # Top risk file
+    top_risk_line = ""
+    dup_files: set[str] = set()
+    if result.duplication:
+        for p in result.duplication.pairs:
+            dup_files.add(p.file_a)
+            dup_files.add(p.file_b)
+
+    best, best_score = None, -1
+    for f in result.files:
+        c_f = min((f.complexity.max_complexity / 20.0) if f.complexity else 0, 1.0)
+        s_f = min(len(f.smells) / 10.0, 1.0)
+        d_f = 1.0 if f.path in dup_files else 0.0
+        z_f = min(f.code_lines / 400.0, 1.0)
+        score = (0.40 * c_f + 0.35 * s_f + 0.15 * d_f + 0.10 * z_f) * 100
+        if score > best_score:
+            best_score, best = score, f
+
+    if best:
+        fname = best.path.split("/")[-1]
+        risk_lbl = ("CRITICAL" if best_score >= 70 else "HIGH" if best_score >= 45
+                    else "MEDIUM" if best_score >= 20 else "LOW")
+        details = []
+        if best.complexity and best.complexity.hotspots:
+            h = best.complexity.hotspots[0]
+            details.append(f"{h.name}  CC={h.complexity}")
+        serious = [s for s in best.smells if s.type not in ("todo_fixme", "magic_number")][:2]
+        for s in serious:
+            details.append(s.type.replace("_", " "))
+        top_risk_line = f"  {fname}  [{risk_lbl}]\n  " + " · ".join(details) if details else f"  {fname}  [{risk_lbl}]"
+
+    print(f"\n{bar}")
+    print(f"  CodeSpy  ·  {result.scanned_path}")
+    print(bar)
+    print(f"\n  {grade_color}Grade {q.grade}  ·  {q.score}/100{reset}\n")
+    print(f"  {'COMPLEXITY':<14} {q.complexity_score:>3}/100   {cc_note}")
+    print(f"  {'SMELLS':<14} {q.smell_score:>3}/100   {smell_note}")
+    print(f"  {'DUPLICATION':<14} {q.duplication_score:>3}/100   {dup_note}")
+    if top_risk_line:
+        print(f"\n  Top risk:")
+        print(f"{top_risk_line}")
+    print(f"\n  Next:  codespy target {result.scanned_path}")
+    print()
