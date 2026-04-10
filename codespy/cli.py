@@ -169,6 +169,7 @@ def _add_scan_args(parser) -> None:
     parser.add_argument("--exclude", action="append", default=[], metavar="GLOB",
                         help="Exclude files matching glob (repeatable)")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress progress output")
+    parser.add_argument("--no-open", action="store_true", help="Do not auto-open HTML report in browser")
     parser.add_argument("--version", action="version", version="codespy 0.1.0")
 
 
@@ -206,7 +207,15 @@ def _run(args) -> None:
         _write_csv(result, report_out)
 
     if not args.quiet:
-        print(f"Report ({args.report}): {report_out}")
+        abs_path = Path(report_out).resolve()
+        if args.report == "html":
+            print(f"Report (html): file://{abs_path}")
+            no_open = getattr(args, "no_open", False)
+            if not no_open:
+                import webbrowser
+                webbrowser.open(abs_path.as_uri())
+        else:
+            print(f"Report ({args.report}): {report_out}")
 
 
 def _write_csv(result, output_path: str) -> None:
@@ -272,9 +281,10 @@ def _click_main() -> None:
     @click.option("--ignore", multiple=True, help="Extra dir names to ignore (legacy)")
     @click.option("--exclude", multiple=True, help="Exclude files matching glob (repeatable)")
     @click.option("-q", "--quiet", is_flag=True, help="Suppress progress output")
+    @click.option("--no-open", is_flag=True, help="Do not auto-open HTML report in browser")
     @click.version_option("0.1.0", prog_name="codespy")
     def cli(path, output_json, report, report_out, no_complexity,
-            no_duplication, no_smells, ignore, exclude, quiet):
+            no_duplication, no_smells, ignore, exclude, quiet, no_open):
         """Analyze code quality of a directory or file."""
         class _Args:
             pass
@@ -289,6 +299,7 @@ def _click_main() -> None:
         args.ignore = list(ignore)
         args.exclude = list(exclude)
         args.quiet = quiet
+        args.no_open = no_open
         _run(args)
 
     cli()
