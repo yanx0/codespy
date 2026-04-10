@@ -9,7 +9,7 @@ CodeSpy is a zero-mandatory-dependency CLI code scanner written in Python 3.11+.
 ```
 codespy/
 ├── cli.py           — Entry point: scan + target subcommands → reporters
-├── scanner.py       — Orchestrates traversal + per-file analysis pipeline
+├── scanner.py       — Orchestrates traversal + per-file analysis pipeline; structured CLI summary
 ├── languages.py     — Extension → language map; comment syntax; ignore patterns
 ├── metrics.py       — LOC counting (single-pass); function/class counting
 ├── models.py        — Dataclasses for all result types (FileResult, ScanResult, etc.)
@@ -65,7 +65,7 @@ Three concrete reporter classes rather than an ABC + dynamic loading. Adding a f
 
 ### Decision 7: `codespy target` as a machine-readable subcommand
 
-The `target` subcommand outputs a single JSON object with `file`, `function`, `function_cc`, `action`, and `success_signal` — designed for tool consumption, not human reading. This makes it composable with Claude Code commands, CI scripts, and other tooling.
+The `target` subcommand outputs a single JSON object with `file`, `function`, `function_cc`, `action`, and `success_signal` — designed for tool consumption, not human reading. This makes it composable with Claude Code commands, CI scripts, and other tooling. Add `--human` for a structured, labeled summary (see Decision 12).
 
 The target is selected by per-file risk scoring:
 - Complexity: 40% (max CC / 20, capped at 1.0)
@@ -88,6 +88,24 @@ Rather than using a click Group (which would break the existing `codespy <path>`
 ### Decision 10: Editorial HTML style
 
 The HTML dashboard uses a light editorial aesthetic (white background, Georgia serif headlines, two-column annotation cards with blue left border) rather than a dark dashboard style. More legible in print and in code review contexts.
+
+### Decision 11: Structured CLI summary — conclusion first
+
+The terminal output from `scan` follows a fixed hierarchy: grade → sub-scores → top risk → next action → report path. This replaces the flat process dump (`Scanning N files... Analyzed N files... Quality score: N`) with a structure that puts the verdict at the top and supporting evidence below.
+
+Implemented in `scanner._print_summary()`. The top risk is computed inline using the same per-file risk formula as `html_reporter._file_risk_score()` — not a re-scan, just a pass over the already-computed `FileResult` list. ANSI color is applied to the grade line only; the rest is plain text so it reads cleanly in any terminal.
+
+### Decision 12: `codespy target --human` for readable output
+
+`codespy target` defaults to JSON for tool consumption (CI, Claude Code). Adding `--human` prints a bordered, labeled block — File / Function / Why / Action / Signal — readable in 5 seconds without parsing JSON syntax. The two modes share the same underlying `_top_target()` logic; only the renderer differs.
+
+**Trade-off:** `--human` is not the default because the primary consumer of `target` output is the `/refactor-loop` command, which parses JSON. Defaulting to JSON keeps the machine path frictionless.
+
+### Decision 13: Dashboard section order — action before evidence
+
+The HTML dashboard sections are ordered: Score → Risk Files → **What to Fix** → Complexity Hotspots → Overview. "What to Fix" is promoted above the complexity detail because it directly answers the decision question. Complexity hotspots are supporting evidence for readers who want to understand why, not the primary output.
+
+The 4-stat row (files / lines / functions / smells) is replaced by a 3-column verdict table: Dimension · Score/100 · Primary driver. This answers "why did it score this way?" in one glance. Raw counts (total files, total functions) are retained as a single row in the verdict table's Overall row.
 
 ## Analysis Features
 
