@@ -1,7 +1,10 @@
 # Refactor Loop
 
-Scanner-driven refactoring verification. Finds the highest-priority code target,
-proposes a concrete refactoring, and re-scans to verify improvement.
+Scanner-driven refactoring. Finds the highest-priority target, proposes the
+smallest effective fix, and re-scans to verify improvement.
+
+Policy: prefer the minimal option. Optimize for measurable health gain with
+low behavioral risk and small change budget. See CLAUDE.md §5 for full policy.
 
 ## Usage
 
@@ -9,101 +12,105 @@ proposes a concrete refactoring, and re-scans to verify improvement.
 /refactor-loop <path>
 ```
 
-`<path>` is the directory or file to scan (default: `.` if omitted).
-
 ---
 
-## Workflow — follow these steps exactly
+## Workflow
 
 ### Step 1 — Find the target
 
-Run:
 ```bash
 python3 -m codespy.cli target <path>
 ```
 
-Parse the JSON output. Extract:
-- `file` — the target file path
-- `function` — the function to refactor (may be null for non-Python)
-- `function_cc` — current cyclomatic complexity
-- `action` — what to do
-- `success_signal` — what a passing re-scan looks like
+Extract: `file`, `function`, `function_cc`, `top_smells`, `risk_label`.
 
-Show the user a one-line summary:
+Show the user:
 ```
-Target: `<function>` in `<file>` — CC=<N> [<RISK_LABEL>]
-Action: <action>
+Target:  `<function>` in `<file>` — CC=<N> [<RISK_LABEL>]
+Why:     <primary smell or complexity driver from top_smells>
+Signal:  CC drops ≥2 points or falls below 10
 ```
 
 ### Step 2 — Read the target
 
-Read the full target file. Identify the exact function body named in `function`.
-If `function` is null (non-Python file), focus on the worst smell from `top_smells`.
+Read the full target file. Identify the exact function body. Understand the
+control flow before proposing anything — do not skim.
 
-### Step 3 — Propose the refactoring
+### Step 3 — Propose two options
 
-Propose a concrete refactoring. Rules:
-- Extract distinct logical steps into named helper functions
-- Use early returns to flatten nesting (guard clauses before the main logic)
-- Each extracted helper should have a single purpose and a descriptive name
-- Do NOT change the public signature of the target function unless the user agrees
-- Do NOT touch test files
+Formulate two refactoring options:
 
-Show the before/after as a unified diff or side-by-side. Be specific — no vague "improve this function" suggestions.
+**Option A (recommended by default) — minimal**
+The smallest change that moves the scanner signal. Typically: extract one or
+two private helpers, or add guard clauses to flatten the top nesting level.
 
-Ask: **"Apply this refactoring? (yes / no / show alternative)"**
+**Option B — larger**
+A fuller restructure that produces a cleaner result but touches more code.
 
-### Step 4 — Apply if approved
+Present both with a unified diff or clear before/after. For each, state:
 
-If the user says yes: apply the edit with the Edit tool.
-If no: propose an alternative approach (different split, different extract pattern).
-If "show alternative": offer a second refactoring strategy.
+| | Option A | Option B |
+|---|---|---|
+| Expected CC drop | | |
+| Lines changed | | |
+| Functions touched | | |
+| Risk | low / med / high | low / med / high |
+| Trade-off | | |
 
-Maximum 3 attempts before stopping and reporting: "Could not find an approach you want to apply — the target remains at CC=<N>."
+**Default recommendation: Option A**, unless Option B has clearly better payoff
+at similar or lower risk. State your recommendation explicitly and why.
+
+Ask: **"Apply Option A, apply Option B, or show a different approach?"**
+
+### Step 4 — Apply on approval
+
+Apply the approved option with the Edit tool. Never edit silently.
+
+If the user declines both options, propose one alternative. If declined again,
+stop: *"No approved approach found — target remains at CC=\<N\>."* Do not
+retry more than three times total.
+
+Do not change public signatures, return types, module boundaries, or tests.
+Extracted helpers must be private (`_` prefix).
 
 ### Step 5 — Re-scan to verify
 
-After applying, re-scan the target file only:
 ```bash
 python3 -m codespy.cli target <file>
 ```
 
-Compare `function_cc` before and after.
-
 Report the result:
-```
-Before: <function> CC=<before>  complexity_score=<before_score>
-After:  <function> CC=<after>   complexity_score=<after_score>
 
-✓ VERIFIED — complexity dropped by <delta> points
 ```
-or:
-```
-✗ NOT VERIFIED — complexity is <after>, was <before>. Suggest reverting or trying a different split.
+Before:  <function>  CC=<N>
+After:   <function>  CC=<M>
+
+✓ VERIFIED — dropped <delta> points          (if signal passed)
+✗ NOT VERIFIED — still at <M>, was <N>       (if signal failed)
 ```
 
-### Step 6 — Offer to continue
+The success signal passes when `function_cc` drops ≥ 2 points **or** falls
+below 10. If it does not pass, the refactor did not succeed.
 
-If verified: "Target is now clean. Run /refactor-loop <path> again to find the next highest-priority target."
-If not verified: "Recommend reverting the change and trying a different approach."
+### Step 6 — Continue or stop
+
+**If verified:** state the improvement clearly, then ask:
+*"Target is clean. Run `/refactor-loop <path>` to find the next target."*
+
+**If not verified:** recommend reverting and explain what to try differently.
+Do not start a second refactor in the same iteration.
 
 ---
 
-## Success signal
+## Policy summary (operationalized)
 
-**The refactor is verified when:**
-- `function_cc` drops by ≥ 2 points, OR
-- `function_cc` falls below 10
-
-This is the named signal. Watch it, not the code.
-
----
-
-## Ground rules for this workflow
-
-1. Always show the diff before applying — never edit silently
-2. Always re-scan after applying — the scanner is the proof
-3. If the scanner score does not improve, say so honestly
-4. Do not refactor more than one function per loop iteration
-5. Stop after 3 unsuccessful attempts — reset context rather than retry blindly
-6. Keep the function's external behaviour identical (same inputs, same outputs)
+| Rule | Behavior |
+|---|---|
+| Smallest meaningful change | Option A is the default recommendation |
+| Two options always | Present both before asking for approval |
+| Explain the trade-off | Required for every proposal |
+| One function per iteration | Stop after one verified improvement |
+| Change budget | One file, one function; stop if scope grows |
+| Preserve interfaces | No signature changes, no test edits |
+| Scanner is the proof | Re-scan is mandatory; no exceptions |
+| Success signal | CC drops ≥2 or falls below 10 |
